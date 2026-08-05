@@ -197,7 +197,7 @@ export class MemoryGoalRepository implements GoalRepository {
       (label) =>
         label.organizationId === organizationId &&
         label.id !== exceptId &&
-        label.name.toLocaleLowerCase() === name.toLocaleLowerCase()
+        label.name.toLowerCase() === name.toLowerCase()
     );
   }
 

@@ -437,8 +437,7 @@ export async function migrateApiDatabase(sql: SQL): Promise<void> {
           constraint goal_labels_color_length_check
             check (color is null or char_length(color) between 1 and 32),
           constraint goal_labels_description_length_check
-            check (description is null or char_length(description) between 1 and 500),
-          unique (organization_id, id)
+            check (description is null or char_length(description) between 1 and 500)
         )
       `;
       await transaction`
@@ -469,7 +468,6 @@ export async function migrateApiDatabase(sql: SQL): Promise<void> {
               measurement_method is null
               or char_length(measurement_method) between 1 and 10000
             ),
-          unique (organization_id, id),
           constraint goals_owner_membership_fk
             foreign key (organization_id, owner_user_id)
             references organization_memberships (organization_id, user_id)
