@@ -1,0 +1,74 @@
+---
+title: Authentication
+description: The application authentication contract and provider interface.
+---
+
+Goalkeeper exposes one provider-neutral authentication contract to the browser.
+The REST API owns the canonical routes and user shape while an injected
+`AuthBackend` owns the provider-specific session lifecycle.
+
+## Browser contract
+
+| Route | Purpose |
+| --- | --- |
+| `GET /v1/auth/config` | Return the configured browser authentication method |
+| `GET /v1/auth/session` | Return the current canonical user |
+| `GET /v1/auth/login` | Begin login and continue to a same-origin URL |
+| `POST /v1/auth/login` | Sign in with the built-in email provider |
+| `POST /v1/auth/register` | Register an email principal |
+| `GET /v1/auth/verify-email` | Consume an email verification token |
+| `GET /v1/auth/callback` | Complete login and continue to the application |
+| `POST /v1/auth/logout` | End the session and return the next browser URL |
+
+An authenticated session contains only the application identity required by
+the web client:
+
+```json
+{
+  "user": {
+    "id": "user-id",
+    "displayName": "Example User",
+    "email": "user@example.com"
+  }
+}
+```
+
+The web application does not depend on provider-specific claims, tokens, or SDK
+types.
+
+## Provider interface
+
+Self-hosted operators can supply an `AuthBackend` to `createApiHandler`. The
+provider is responsible for initiating login, validating callbacks, resolving
+its authenticated principal to the canonical application user, issuing and
+revoking the session cookie, and coordinating logout.
+
+This keeps authentication mechanisms behind a provider interface. Replacing the
+provider does not change the browser routes, the protected page, or the
+application user model.
+
+If a provider accepts JWT access tokens, it validates their signature,
+algorithm, key ID, issuer, audience, and expiry before constructing an
+`AuthSession`. JWT key rotation and issuer-specific claims stay inside the
+provider.
+
+## Built-in email provider
+
+The default self-hosted configuration uses the built-in email provider.
+Principals, Argon2id password hashes, opaque session hashes, and
+email-verification token hashes are stored in PostgreSQL. Verification tokens
+are single-use and expire after 24 hours. Login uses one invalid-credentials
+response for unknown, incorrect, and unverified accounts.
+
+The local email-delivery adapter logs the verification message and callback URL
+to the API terminal. It is disabled in production. To verify a local principal
+without opening the callback URL, run:
+
+```bash
+bun run auth:verify-email -- user@example.com
+```
+
+Open `/account` to exercise the protected page. Unauthenticated requests are
+sent to the root page; logout revokes the persisted session and returns there.
+
+The same page provides [API token management](/docs/concepts/api-tokens).

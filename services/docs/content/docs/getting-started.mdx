@@ -26,6 +26,18 @@ bun run dev
 To work on one component, use `bun run web:dev`, `bun run api:dev`, or
 `bun run docs:dev`.
 
+Open `http://localhost:3000/account` to exercise the local authentication flow.
+Register with an email and password from the root page. The API logs the local
+verification message and link to its terminal. You can also verify a local
+principal directly:
+
+```bash
+bun run auth:verify-email -- user@example.com
+```
+
+The API applies its PostgreSQL migrations at startup. Run `bun run db:migrate`
+to apply them without starting the API service.
+
 ## Validation
 
 ```bash

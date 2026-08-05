@@ -9,6 +9,7 @@
     "services/*"
   ],
   "scripts": {
+    "help": "bun run scripts/list-targets.ts",
     "dev": "bun run db:up && bun run --filter '*' dev",
     "web:dev": "bun run --cwd apps/web dev",
     "api:dev": "bun run --cwd services/api dev",
@@ -16,9 +17,11 @@
     "api:specs": "bun run scripts/generate-openapi.ts",
     "docs:generate": "bun run --cwd services/docs content:generate && bun run --cwd services/docs source:generate",
     "open:web": "open http://localhost:3000",
-    "db:up": "docker compose up -d postgres",
+    "db:up": "docker compose up -d --wait postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres",
+    "db:migrate": "bun run --cwd services/api db:migrate",
+    "auth:verify-email": "bun run --cwd services/api auth:verify-email",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",
     "build": "bun run --filter '*' build",
