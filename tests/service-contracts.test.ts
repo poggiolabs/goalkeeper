@@ -5,12 +5,16 @@ import { apiRoutes } from "../services/api/src/routes";
 import { apiOpenApiDocument } from "../services/api/src/spec";
 import { MemoryApiTokenRepository } from "./helpers/memory-api-token-repository";
 import { MemoryEmailAuthBackend } from "./helpers/memory-email-auth-backend";
+import { MemoryOrganizationRepository } from "./helpers/memory-organization-repository";
+import { createOrganizationService } from "../services/api/src/organizations/service";
 
 const webOrigin = "http://localhost:3000";
 const authBackend = new MemoryEmailAuthBackend(webOrigin);
+const organizationRepository = new MemoryOrganizationRepository();
 const handleApiRequest = createApiHandler({
   webOrigin,
   apiTokens: createApiTokenService(new MemoryApiTokenRepository()),
+  organizations: createOrganizationService(organizationRepository),
   auth: authBackend
 });
 
@@ -43,7 +47,7 @@ describe("REST API contract", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe(webOrigin);
     expect(response.headers.get("access-control-allow-credentials")).toBe("true");
     expect(response.headers.get("access-control-allow-methods")).toBe(
-      "GET, POST, DELETE, OPTIONS"
+      "GET, POST, PATCH, DELETE, OPTIONS"
     );
   });
 });
@@ -51,11 +55,14 @@ describe("REST API contract", () => {
 describe("authentication contract", () => {
   test("requires a session for the account identity", async () => {
     const response = await handleApiRequest(
-      new Request(`http://localhost${apiRoutes.authSession.path}`)
+      new Request(`http://localhost${apiRoutes.authSession.path}`, {
+        headers: { cookie: "test_session=invalid" }
+      })
     );
 
     expect(response.status).toBe(401);
     expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
     expect(await response.json()).toEqual({ error: "unauthorized" });
   });
 
@@ -96,7 +103,7 @@ describe("authentication contract", () => {
     );
     expect(verificationResponse.status).toBe(200);
     expect(await verificationResponse.clone().json()).toEqual({
-      redirectTo: `${webOrigin}/?verified=1`
+      redirectTo: `${webOrigin}/sign-in?verified=1`
     });
     expect(verificationResponse.headers.get("cache-control")).toBe("no-store");
     expect(verificationResponse.headers.get("referrer-policy")).toBe(
@@ -152,7 +159,15 @@ describe("authentication contract", () => {
         id: expect.any(String),
         displayName: "Test User",
         email: "test@example.com"
-      }
+      },
+      activeOrganizationId: expect.any(String),
+      organizations: [
+        {
+          id: expect.any(String),
+          name: "Test User",
+          role: "owner"
+        }
+      ]
     });
   });
 
@@ -163,7 +178,7 @@ describe("authentication contract", () => {
       )
     );
 
-    expect(response.headers.get("location")).toBe(`${webOrigin}/account`);
+    expect(response.headers.get("location")).toBe(`${webOrigin}/home`);
   });
 
   test("prevents callback responses from being cached or referred", async () => {
@@ -198,7 +213,7 @@ describe("authentication contract", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
     expect(await response.json()).toEqual({
-      redirectTo: `${webOrigin}/`
+      redirectTo: `${webOrigin}/sign-in`
     });
   });
 
@@ -240,6 +255,277 @@ describe("authentication contract", () => {
     expect(apiOpenApiDocument.paths[apiRoutes.authLogout.path].post).toBeDefined();
   });
 
+});
+
+describe("organization contract", () => {
+  async function authenticatedUser(displayName = "Organization User") {
+    const email = `${crypto.randomUUID()}@example.com`;
+    const user = authBackend.addVerifiedUser({
+      email,
+      password: "correct horse battery staple",
+      displayName
+    });
+    const response = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.authEmailLogin.path}`, {
+        method: "POST",
+        headers: { origin: webOrigin, "content-type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password: "correct horse battery staple",
+          returnTo: `${webOrigin}/home`
+        })
+      })
+    );
+    return { user, cookie: response.headers.get("set-cookie") ?? "" };
+  }
+
+  test("creates one organization named after the user on first session", async () => {
+    const { user, cookie } = await authenticatedUser("Ada Lovelace");
+
+    const first = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.authSession.path}`, {
+        headers: { cookie }
+      })
+    );
+    const firstSession = (await first.json()) as {
+      activeOrganizationId: string;
+      organizations: Array<{ id: string; name: string; role: string }>;
+    };
+    const second = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.authSession.path}`, {
+        headers: { cookie }
+      })
+    );
+    const secondSession = (await second.json()) as typeof firstSession;
+
+    expect(firstSession.organizations).toEqual([
+      {
+        id: firstSession.activeOrganizationId,
+        name: "Ada Lovelace",
+        role: "owner"
+      }
+    ]);
+    expect(secondSession).toEqual(firstSession);
+    expect(
+      organizationRepository.memberships.get(firstSession.activeOrganizationId)?.size
+    ).toBe(1);
+  });
+
+  test("creates and switches organizations while rejecting non-members", async () => {
+    const { cookie } = await authenticatedUser();
+    await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.authSession.path}`, {
+        headers: { cookie }
+      })
+    );
+
+    const createdResponse = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationsCreate.path}`, {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ name: "Second Organization" })
+      })
+    );
+    expect(createdResponse.status).toBe(201);
+    const created = (await createdResponse.json()) as {
+      activeOrganizationId: string;
+      organizations: Array<{ id: string; name: string }>;
+    };
+    expect(created.organizations).toHaveLength(2);
+    expect(
+      created.organizations.find(({ id }) => id === created.activeOrganizationId)?.name
+    ).toBe("Second Organization");
+
+    const original = created.organizations.find(
+      ({ id }) => id !== created.activeOrganizationId
+    )!;
+    const switchedResponse = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationsSwitch.path}`, {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ organizationId: original.id })
+      })
+    );
+    expect(switchedResponse.status).toBe(200);
+    expect(await switchedResponse.json()).toMatchObject({
+      activeOrganizationId: original.id
+    });
+
+    const forbidden = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationsSwitch.path}`, {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ organizationId: crypto.randomUUID() })
+      })
+    );
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toMatchObject({ error: "membership_not_found" });
+  });
+
+  test("requires authentication and same-origin mutation requests", async () => {
+    const unauthenticated = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationsList.path}`)
+    );
+    expect(unauthenticated.status).toBe(401);
+
+    const { cookie } = await authenticatedUser();
+    const crossOrigin = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationsCreate.path}`, {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: "https://example.net",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ name: "Blocked" })
+      })
+    );
+    expect(crossOrigin.status).toBe(403);
+  });
+
+  test("lets administrators rename organizations and manage non-owner roles", async () => {
+    const owner = await authenticatedUser("Owner User");
+    const ownerSessionResponse = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.authSession.path}`, {
+        headers: { cookie: owner.cookie }
+      })
+    );
+    const ownerSession = (await ownerSessionResponse.json()) as {
+      activeOrganizationId: string;
+    };
+    const admin = await authenticatedUser("Admin User");
+    const member = await authenticatedUser("Member User");
+    organizationRepository.addMember(
+      ownerSession.activeOrganizationId,
+      admin.user,
+      "admin"
+    );
+    organizationRepository.addMember(
+      ownerSession.activeOrganizationId,
+      member.user,
+      "member"
+    );
+
+    const deniedRename = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationUpdate.path}`, {
+        method: "PATCH",
+        headers: {
+          cookie: member.cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ name: "Denied" })
+      })
+    );
+    expect(deniedRename.status).toBe(403);
+
+    const renamed = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationUpdate.path}`, {
+        method: "PATCH",
+        headers: {
+          cookie: admin.cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ name: "Renamed Organization" })
+      })
+    );
+    expect(renamed.status).toBe(200);
+    expect(await renamed.json()).toMatchObject({
+      activeOrganizationId: ownerSession.activeOrganizationId,
+      organizations: [
+        {
+          id: ownerSession.activeOrganizationId,
+          name: "Renamed Organization",
+          role: "admin"
+        }
+      ]
+    });
+
+    const membersResponse = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationMembersList.path}`, {
+        headers: { cookie: owner.cookie }
+      })
+    );
+    expect(membersResponse.status).toBe(200);
+    expect(await membersResponse.json()).toMatchObject({
+      members: [
+        { userId: owner.user.id, role: "owner" },
+        { userId: admin.user.id, role: "admin" },
+        { userId: member.user.id, role: "member" }
+      ]
+    });
+
+    const memberRolePath = apiRoutes.organizationMemberUpdate.path.replace(
+      "{userId}",
+      encodeURIComponent(member.user.id)
+    );
+    const promoted = await handleApiRequest(
+      new Request(`http://localhost${memberRolePath}`, {
+        method: "PATCH",
+        headers: {
+          cookie: admin.cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ role: "admin" })
+      })
+    );
+    expect(promoted.status).toBe(200);
+    expect(await promoted.json()).toMatchObject({
+      member: { userId: member.user.id, role: "admin" }
+    });
+
+    const ownerRolePath = apiRoutes.organizationMemberUpdate.path.replace(
+      "{userId}",
+      encodeURIComponent(owner.user.id)
+    );
+    const ownerRoleChange = await handleApiRequest(
+      new Request(`http://localhost${ownerRolePath}`, {
+        method: "PATCH",
+        headers: {
+          cookie: admin.cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ role: "member" })
+      })
+    );
+    expect(ownerRoleChange.status).toBe(403);
+  });
+
+  test("documents every organization route", () => {
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.organizationsList.path].get
+    ).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.organizationsCreate.path].post
+    ).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.organizationsSwitch.path].post
+    ).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.organizationUpdate.path].patch
+    ).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.organizationMembersList.path].get
+    ).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.organizationMemberUpdate.path].patch
+    ).toBeDefined();
+  });
 });
 
 describe("API token management contract", () => {
@@ -284,7 +570,7 @@ describe("API token management contract", () => {
         },
         body: JSON.stringify({
           name: "Contract token",
-          scopes: ["goals:read:own"],
+          scopes: ["goals:read"],
           expiresInDays: 30
         })
       })
@@ -331,7 +617,7 @@ describe("API token management contract", () => {
         },
         body: JSON.stringify({
           name: "Blocked",
-          scopes: ["goals:read:own"]
+          scopes: ["goals:read"]
         })
       })
     );
@@ -360,8 +646,8 @@ describe("API token management contract", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       scopes: [
-        expect.objectContaining({ id: "goals:read:own", default: true }),
-        expect.objectContaining({ id: "goals:write:own", default: false }),
+        expect.objectContaining({ id: "goals:read", default: true }),
+        expect.objectContaining({ id: "goals:write", default: false }),
         expect.objectContaining({ id: "goals:read:all", default: false }),
         expect.objectContaining({ id: "goals:write:all", default: false })
       ]

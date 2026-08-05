@@ -35,6 +35,12 @@ export function createPostgresEmailAuthBackend(options: {
   return {
     method: "email",
 
+    invalidSessionHeaders(request) {
+      return cookieValue(request.headers.get("cookie"), cookieName)
+        ? { "set-cookie": clearSessionCookie(secureCookie) }
+        : undefined;
+    },
+
     async getSession(request) {
       const secret = cookieValue(request.headers.get("cookie"), cookieName);
       if (!secret) return null;
@@ -272,7 +278,7 @@ export function createPostgresEmailAuthBackend(options: {
         `;
       }
       return {
-        redirectTo: new URL("/", options.webOrigin).toString(),
+        redirectTo: new URL("/sign-in", options.webOrigin).toString(),
         headers: {
           "set-cookie": clearSessionCookie(secureCookie)
         }

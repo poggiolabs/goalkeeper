@@ -7,11 +7,16 @@ import type {
 export class MemoryApiTokenRepository implements ApiTokenRepository {
   readonly records: ApiTokenRecord[] = [];
 
-  async listActive(ownerUserId: string, now: Date): Promise<ApiTokenRecord[]> {
+  async listActive(
+    ownerUserId: string,
+    organizationId: string,
+    now: Date
+  ): Promise<ApiTokenRecord[]> {
     return this.records
       .filter(
         (record) =>
           record.ownerUserId === ownerUserId &&
+          record.organizationId === organizationId &&
           record.revokedAt === null &&
           record.expiresAt > now
       )
@@ -45,12 +50,15 @@ export class MemoryApiTokenRepository implements ApiTokenRepository {
 
   async revoke(
     ownerUserId: string,
+    organizationId: string,
     tokenId: string,
     revokedAt: Date
   ): Promise<ApiTokenRecord | null> {
     const record = this.records.find(
       (candidate) =>
-        candidate.ownerUserId === ownerUserId && candidate.id === tokenId
+        candidate.ownerUserId === ownerUserId &&
+        candidate.organizationId === organizationId &&
+        candidate.id === tokenId
     );
     if (!record) return null;
     record.revokedAt ??= revokedAt;

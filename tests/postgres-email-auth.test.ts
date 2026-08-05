@@ -107,6 +107,20 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL email authentication", () => {
       }
     });
 
+    const restartedAuth = createPostgresEmailAuthBackend({
+      sql: database,
+      webOrigin: "http://localhost:3000",
+      apiOrigin: "http://localhost:3001",
+      emailDelivery: delivery
+    });
+    await expect(restartedAuth.getSession(request)).resolves.toEqual({
+      user: {
+        id: expect.any(String),
+        email,
+        displayName: "Database User"
+      }
+    });
+
     await auth.logout(request);
     await expect(auth.getSession(request)).resolves.toBeNull();
   });

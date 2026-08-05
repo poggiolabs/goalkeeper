@@ -35,6 +35,30 @@ export const apiRoutes = {
     method: "POST",
     path: "/v1/auth/logout"
   },
+  organizationsList: {
+    method: "GET",
+    path: "/v1/organizations"
+  },
+  organizationsCreate: {
+    method: "POST",
+    path: "/v1/organizations"
+  },
+  organizationsSwitch: {
+    method: "POST",
+    path: "/v1/organizations/switch"
+  },
+  organizationUpdate: {
+    method: "PATCH",
+    path: "/v1/organizations/current"
+  },
+  organizationMembersList: {
+    method: "GET",
+    path: "/v1/organizations/current/members"
+  },
+  organizationMemberUpdate: {
+    method: "PATCH",
+    path: "/v1/organizations/current/members/{userId}"
+  },
   apiTokensList: {
     method: "GET",
     path: "/v1/api-tokens"

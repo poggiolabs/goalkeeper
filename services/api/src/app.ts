@@ -6,11 +6,16 @@ import {
 } from "./auth/types";
 import { ApiTokenError, type ApiTokenService } from "./api-tokens/service";
 import { apiTokenScopeRegistry } from "./api-tokens/types";
+import {
+  OrganizationError,
+  type OrganizationService
+} from "./organizations/service";
 import { apiRoutes } from "./routes";
 
 export type ApiDependencies = {
   auth: AuthBackend;
   apiTokens: ApiTokenService;
+  organizations: OrganizationService;
   webOrigin: string;
 };
 
@@ -31,8 +36,15 @@ export function createApiHandler(dependencies: ApiDependencies) {
     if (matches(request, apiRoutes.authSession)) {
       const session = await dependencies.auth.getSession(request);
       return session
-        ? sensitiveJson(session, 200, webOrigin)
-        : sensitiveJson({ error: "unauthorized" }, 401, webOrigin);
+        ? sensitiveJson(
+            {
+              ...session,
+              ...(await dependencies.organizations.ensureForUser(session.user))
+            },
+            200,
+            webOrigin
+          )
+        : unauthorizedResponse(dependencies.auth, request, webOrigin);
     }
 
     if (matches(request, apiRoutes.authConfig)) {
@@ -130,7 +142,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
         const body = (await request.json()) as { token?: unknown };
         const transition = await dependencies.auth.verifyEmail({
           token: typeof body.token === "string" ? body.token : "",
-          returnTo: new URL("/", webOrigin).toString()
+          returnTo: new URL("/sign-in", webOrigin).toString()
         });
         return sensitiveJson(
           { redirectTo: transition.redirectTo },
@@ -170,6 +182,124 @@ export function createApiHandler(dependencies: ApiDependencies) {
       );
     }
 
+    if (matches(request, apiRoutes.organizationsList)) {
+      const session = await dependencies.auth.getSession(request);
+      if (!session) {
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
+      }
+      return sensitiveJson(
+        await dependencies.organizations.ensureForUser(session.user),
+        200,
+        webOrigin
+      );
+    }
+
+    if (matches(request, apiRoutes.organizationsCreate)) {
+      if (!hasAllowedOrigin(request, webOrigin)) {
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+      }
+      const session = await dependencies.auth.getSession(request);
+      if (!session) {
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
+      }
+      try {
+        return sensitiveJson(
+          await dependencies.organizations.createForUser(
+            session.user,
+            await request.json()
+          ),
+          201,
+          webOrigin
+        );
+      } catch (error) {
+        return organizationErrorResponse(error, webOrigin);
+      }
+    }
+
+    if (matches(request, apiRoutes.organizationsSwitch)) {
+      if (!hasAllowedOrigin(request, webOrigin)) {
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+      }
+      const session = await dependencies.auth.getSession(request);
+      if (!session) {
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
+      }
+      try {
+        return sensitiveJson(
+          await dependencies.organizations.switchForUser(
+            session.user,
+            await request.json()
+          ),
+          200,
+          webOrigin
+        );
+      } catch (error) {
+        return organizationErrorResponse(error, webOrigin);
+      }
+    }
+
+    if (matches(request, apiRoutes.organizationUpdate)) {
+      if (!hasAllowedOrigin(request, webOrigin)) {
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+      }
+      const session = await dependencies.auth.getSession(request);
+      if (!session) {
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
+      }
+      try {
+        return sensitiveJson(
+          await dependencies.organizations.updateActiveForUser(
+            session.user,
+            await request.json()
+          ),
+          200,
+          webOrigin
+        );
+      } catch (error) {
+        return organizationErrorResponse(error, webOrigin);
+      }
+    }
+
+    if (matches(request, apiRoutes.organizationMembersList)) {
+      const session = await dependencies.auth.getSession(request);
+      if (!session) {
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
+      }
+      try {
+        return sensitiveJson(
+          await dependencies.organizations.listActiveMembersForUser(session.user),
+          200,
+          webOrigin
+        );
+      } catch (error) {
+        return organizationErrorResponse(error, webOrigin);
+      }
+    }
+
+    const memberUserId = matchOrganizationMemberUpdate(request);
+    if (memberUserId) {
+      if (!hasAllowedOrigin(request, webOrigin)) {
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+      }
+      const session = await dependencies.auth.getSession(request);
+      if (!session) {
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
+      }
+      try {
+        return sensitiveJson(
+          await dependencies.organizations.updateActiveMemberRoleForUser(
+            session.user,
+            memberUserId,
+            await request.json()
+          ),
+          200,
+          webOrigin
+        );
+      } catch (error) {
+        return organizationErrorResponse(error, webOrigin);
+      }
+    }
+
     if (matches(request, apiRoutes.apiTokenScopes)) {
       return json(
         {
@@ -190,11 +320,16 @@ export function createApiHandler(dependencies: ApiDependencies) {
     if (matches(request, apiRoutes.apiTokensList)) {
       const session = await dependencies.auth.getSession(request);
       if (!session) {
-        return sensitiveJson({ error: "unauthorized" }, 401, webOrigin);
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
       }
 
+      const organizationContext =
+        await dependencies.organizations.ensureForUser(session.user);
       return sensitiveJson(
-        await dependencies.apiTokens.list(session.user.id),
+        await dependencies.apiTokens.list(
+          session.user.id,
+          organizationContext.activeOrganizationId
+        ),
         200,
         webOrigin
       );
@@ -206,13 +341,19 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
       const session = await dependencies.auth.getSession(request);
       if (!session) {
-        return sensitiveJson({ error: "unauthorized" }, 401, webOrigin);
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
       }
 
       try {
+        const organizationContext =
+          await dependencies.organizations.ensureForUser(session.user);
         const body = await request.json();
         return sensitiveJson(
-          await dependencies.apiTokens.create(session.user.id, body),
+          await dependencies.apiTokens.create(
+            session.user.id,
+            organizationContext.activeOrganizationId,
+            body
+          ),
           201,
           webOrigin
         );
@@ -228,12 +369,18 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
       const session = await dependencies.auth.getSession(request);
       if (!session) {
-        return sensitiveJson({ error: "unauthorized" }, 401, webOrigin);
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
       }
 
       try {
+        const organizationContext =
+          await dependencies.organizations.ensureForUser(session.user);
         return sensitiveJson(
-          await dependencies.apiTokens.revoke(session.user.id, revokedTokenId),
+          await dependencies.apiTokens.revoke(
+            session.user.id,
+            organizationContext.activeOrganizationId,
+            revokedTokenId
+          ),
           200,
           webOrigin
         );
@@ -244,6 +391,40 @@ export function createApiHandler(dependencies: ApiDependencies) {
 
     return json({ error: "not_found" }, 404, webOrigin);
   };
+}
+
+function organizationErrorResponse(
+  error: unknown,
+  webOrigin: string
+): Response {
+  if (error instanceof OrganizationError) {
+    return sensitiveJson(
+      { error: error.code, message: error.message },
+      error.status,
+      webOrigin
+    );
+  }
+  if (error instanceof SyntaxError) {
+    return sensitiveJson(
+      { error: "invalid_json", message: "Request body must be valid JSON" },
+      400,
+      webOrigin
+    );
+  }
+  throw error;
+}
+
+function unauthorizedResponse(
+  auth: AuthBackend,
+  request: Request,
+  webOrigin: string
+): Response {
+  return sensitiveJson(
+    { error: "unauthorized" },
+    401,
+    webOrigin,
+    auth.invalidSessionHeaders?.(request)
+  );
 }
 
 function apiTokenErrorResponse(error: unknown, webOrigin: string): Response {
@@ -293,7 +474,7 @@ function authErrorResponse(
 export function safeReturnTo(
   requestedReturnTo: string | null,
   webOrigin: string,
-  fallbackPath = "/account"
+  fallbackPath = "/home"
 ): string {
   const origin = new URL(webOrigin).origin;
   const fallback = new URL(fallbackPath, origin);
@@ -327,6 +508,19 @@ function matches(
 function matchApiTokenRevoke(request: Request): string | null {
   if (request.method !== apiRoutes.apiTokenRevoke.method) return null;
   const match = new URL(request.url).pathname.match(/^\/v1\/api-tokens\/([^/]+)$/);
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+function matchOrganizationMemberUpdate(request: Request): string | null {
+  if (request.method !== apiRoutes.organizationMemberUpdate.method) return null;
+  const match = new URL(request.url).pathname.match(
+    /^\/v1\/organizations\/current\/members\/([^/]+)$/
+  );
   if (!match?.[1]) return null;
   try {
     return decodeURIComponent(match[1]);
@@ -397,7 +591,7 @@ function responseWithCors(response: Response, webOrigin: string): Response {
   response.headers.set("access-control-allow-credentials", "true");
   response.headers.set(
     "access-control-allow-methods",
-    "GET, POST, DELETE, OPTIONS"
+    "GET, POST, PATCH, DELETE, OPTIONS"
   );
   response.headers.set(
     "access-control-allow-headers",

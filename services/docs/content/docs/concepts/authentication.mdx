@@ -12,7 +12,7 @@ The REST API owns the canonical routes and user shape while an injected
 | Route | Purpose |
 | --- | --- |
 | `GET /v1/auth/config` | Return the configured browser authentication method |
-| `GET /v1/auth/session` | Return the current canonical user |
+| `GET /v1/auth/session` | Return the canonical user and organization context |
 | `GET /v1/auth/login` | Begin login and continue to a same-origin URL |
 | `POST /v1/auth/login` | Sign in with the built-in email provider |
 | `POST /v1/auth/register` | Register an email principal |
@@ -20,8 +20,8 @@ The REST API owns the canonical routes and user shape while an injected
 | `GET /v1/auth/callback` | Complete login and continue to the application |
 | `POST /v1/auth/logout` | End the session and return the next browser URL |
 
-An authenticated session contains only the application identity required by
-the web client:
+An authenticated session contains the provider-neutral application identity
+and organization context required by the web client:
 
 ```json
 {
@@ -29,12 +29,22 @@ the web client:
     "id": "user-id",
     "displayName": "Example User",
     "email": "user@example.com"
-  }
+  },
+  "activeOrganizationId": "organization-id",
+  "organizations": [
+    {
+      "id": "organization-id",
+      "name": "Example User",
+      "role": "owner"
+    }
+  ]
 }
 ```
 
 The web application does not depend on provider-specific claims, tokens, or SDK
-types.
+types. Application-owned organization data is resolved after the authentication
+provider returns the canonical user, so custom providers do not need to manage
+Goalkeeper memberships.
 
 ## Provider interface
 
@@ -73,7 +83,11 @@ without opening and confirming the link, run:
 bun run auth:verify-email -- user@example.com
 ```
 
-Open `/account` to exercise the protected page. Unauthenticated requests are
-sent to the root page; logout revokes the persisted session and returns there.
+Open `/home` to exercise the protected application. Unauthenticated requests are
+sent to `/sign-in`; logout from the sidebar account menu revokes the persisted
+session and returns there. `/account` remains a compatibility redirect to the
+Profile settings page.
 
-The same page provides [API token management](/docs/concepts/api-tokens).
+API Token settings at `/settings/api-tokens` provide
+[API token management](/docs/concepts/api-tokens). See
+[Organizations](/docs/concepts/organizations) for bootstrap and switching.
