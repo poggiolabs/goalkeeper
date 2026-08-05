@@ -34,6 +34,8 @@ Every token has at least one scope:
 | `goals:write` | Create goals, update metadata, and report status for goals owned by the token owner |
 | `goals:read:all` | Read every goal visible to the token owner |
 | `goals:write:all` | Create goals, update metadata, and report status for every goal writable by the token owner |
+| `labels:read` | Read organization goal labels |
+| `labels:write` | Create, update, and delete organization goal labels |
 
 The API scope registry is the canonical source for identifiers, labels,
 defaults, and granted capabilities. `GET /v1/api-token-scopes` exposes its UI

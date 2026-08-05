@@ -2020,7 +2020,9 @@
           "goals:read",
           "goals:write",
           "goals:read:all",
-          "goals:write:all"
+          "goals:write:all",
+          "labels:read",
+          "labels:write"
         ]
       },
       "OrganizationRole": {

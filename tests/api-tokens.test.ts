@@ -214,6 +214,23 @@ describe("API token authorization", () => {
       )
     );
   });
+
+  test("maps label scopes to label capabilities", async () => {
+    await expect(
+      authorizeApiToken(
+        { ...principal, scopes: ["labels:read"] },
+        "labels.read",
+        () => true
+      )
+    ).resolves.toMatchObject({ allowed: true });
+    await expect(
+      authorizeApiToken(
+        { ...principal, scopes: ["goals:read:all"] },
+        "labels.read",
+        () => true
+      )
+    ).rejects.toMatchObject({ code: "insufficient_scope" });
+  });
 });
 
 test("API token scopes stay aligned across the registry and OpenAPI", () => {

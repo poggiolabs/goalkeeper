@@ -93,7 +93,8 @@ organizations. API tokens belong to the active organization. Token secrets are
 returned once, stored only as SHA-256 hashes, expire after a bounded lifetime,
 and can be revoked immediately. Available scopes distinguish access to the
 token owner's goals from access to all goals: `goals:read`, `goals:write`,
-`goals:read:all`, and `goals:write:all`.
+`goals:read:all`, and `goals:write:all`. Organization label CRUD uses the
+independent `labels:read` and `labels:write` scopes.
 
 Organization owners and administrators can rename the active organization at
 `/settings/organization` and manage existing member roles at `/settings/team`.
