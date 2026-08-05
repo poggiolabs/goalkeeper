@@ -6,15 +6,14 @@ title: Services
 | --- | --- | --- |
 | Web | `http://localhost:3000` | Browser user interface |
 | REST API | `http://localhost:3001` | Public application API boundary |
-| Auth | `http://localhost:3002` | Authentication service boundary |
 | Docs | `http://localhost:3003` | Product and engineering documentation |
 | PostgreSQL | `localhost:5432` | Local relational data store |
 
 ## Health checks
 
-The REST API and auth service each expose `GET /health`.
+The REST API exposes `GET /health`.
 
 ## API contracts
 
-The [REST API](/docs/api/rest-api) and [auth API](/docs/api/auth) references are
-generated from their OpenAPI documents.
+The [REST API reference](/docs/api/rest-api) is generated from its OpenAPI
+document.

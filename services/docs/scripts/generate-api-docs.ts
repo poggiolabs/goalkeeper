@@ -17,10 +17,6 @@ const services = [
   {
     slug: "rest-api",
     source: resolve(repositoryRoot, "services/api/openapi.json")
-  },
-  {
-    slug: "auth",
-    source: resolve(repositoryRoot, "services/auth/openapi.json")
   }
 ];
 
