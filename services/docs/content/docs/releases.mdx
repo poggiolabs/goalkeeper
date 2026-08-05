@@ -65,7 +65,10 @@ messages on `main`:
 - a `BREAKING CHANGE:` footer or `!` proposes an incompatible release.
 
 Before `1.0.0`, the configured `bump-minor-pre-major` policy keeps incompatible
-changes on the pre-GA minor line. The bootstrap release is `0.1.0`.
+changes on the pre-GA minor line. The one-time `release-as` override pins the
+bootstrap release to `0.1.0`. Remove that override in the `0.1.0` release pull
+request before merging it; leaving it configured would continue to request the
+same version on later release runs.
 
 Each push to `main` reruns `release.yml`. Release Please updates the same pull
 request, including:
