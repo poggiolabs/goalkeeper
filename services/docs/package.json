@@ -1,0 +1,33 @@
+{
+  "name": "@goalkeeper/docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "source:generate": "fumadocs-mdx",
+    "api:specs": "bun ../../scripts/generate-openapi.ts",
+    "content:generate": "bun run api:specs && bun run scripts/generate-api-docs.ts",
+    "predev": "bun run content:generate && bun run source:generate",
+    "dev": "next dev --hostname 0.0.0.0 --port 3003",
+    "pretypecheck": "bun run content:generate && bun run source:generate",
+    "typecheck": "tsc --noEmit",
+    "prebuild": "bun run content:generate && bun run source:generate",
+    "build": "next build --webpack",
+    "start": "next start --hostname 0.0.0.0 --port 3003"
+  },
+  "dependencies": {
+    "fumadocs-core": "^15.0.0",
+    "fumadocs-mdx": "^11.0.0",
+    "fumadocs-ui": "^15.0.0",
+    "next": "^16.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.14",
+    "@types/mdx": "^2.0.13",
+    "@types/node": "^24.7.2",
+    "@types/react": "^19.2.2",
+    "tailwindcss": "^4.1.14"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "goalkeeper",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.9",
+  "workspaces": [
+    "apps/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "bun run db:up && bun run --filter '*' dev",
+    "web:dev": "bun run --cwd apps/web dev",
+    "api:dev": "bun run --cwd services/api dev",
+    "auth:dev": "bun run --cwd services/auth dev",
+    "docs:dev": "bun run --cwd services/docs dev",
+    "api:specs": "bun run scripts/generate-openapi.ts",
+    "docs:generate": "bun run --cwd services/docs content:generate && bun run --cwd services/docs source:generate",
+    "open:web": "open http://localhost:3000",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun test",
+    "build": "bun run --filter '*' build",
+    "check": "bun run typecheck && bun run test && bun run build"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.9",
+    "typescript": "^6.0.2"
+  }
+}
