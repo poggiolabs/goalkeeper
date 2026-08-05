@@ -81,7 +81,12 @@ function ShellContent() {
         <SidebarHeader className="h-14 justify-center border-b">
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild size="lg" tooltip="Goalkeeper">
+              <SidebarMenuButton
+                asChild
+                size="lg"
+                tooltip="Goalkeeper"
+                className="hover:bg-transparent hover:text-sidebar-foreground"
+              >
                 <Link to="/home">
                   <LogoMark className="size-8!" />
                   <span className="grid min-w-0 flex-1 text-left leading-tight">
@@ -137,7 +142,6 @@ function MainNavigation() {
 
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>Organization</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
           {navigationRoutes.map((route) => {
