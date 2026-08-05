@@ -12,6 +12,7 @@ dist
 build
 coverage
 .cache
+.vite
 .npm
 .next
 .source

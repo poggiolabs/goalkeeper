@@ -1,17 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { apiOpenApiDocument } from "../services/api/src/spec";
-import { authOpenApiDocument } from "../services/auth/src/spec";
 
 const root = resolve(import.meta.dir, "..");
 const outputs = [
   {
     document: apiOpenApiDocument,
     path: resolve(root, "services/api/openapi.json")
-  },
-  {
-    document: authOpenApiDocument,
-    path: resolve(root, "services/auth/openapi.json")
   }
 ];
 

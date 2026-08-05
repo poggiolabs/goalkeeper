@@ -1,9 +1,7 @@
 const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
-const authUrl = import.meta.env.VITE_AUTH_URL ?? "http://localhost:3002";
 
 const services = [
   { name: "REST API", url: `${apiUrl}/health` },
-  { name: "Auth service", url: `${authUrl}/health` },
   { name: "Documentation", url: "http://localhost:3003/docs" }
 ];
 
