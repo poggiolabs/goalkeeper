@@ -175,7 +175,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LogoutResponse"
+                  "$ref": "#/components/schemas/AuthTransitionResponse"
                 }
               }
             }
@@ -360,7 +360,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LogoutResponse"
+                  "$ref": "#/components/schemas/AuthTransitionResponse"
                 }
               }
             }
@@ -863,7 +863,7 @@
           }
         }
       },
-      "LogoutResponse": {
+      "AuthTransitionResponse": {
         "type": "object",
         "additionalProperties": false,
         "required": [

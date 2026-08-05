@@ -21,6 +21,22 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: goalkeeper
+          POSTGRES_USER: goalkeeper
+          POSTGRES_PASSWORD: goalkeeper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U goalkeeper -d goalkeeper"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://goalkeeper:goalkeeper@127.0.0.1:5432/goalkeeper
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

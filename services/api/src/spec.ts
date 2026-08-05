@@ -135,7 +135,9 @@ export const apiOpenApiDocument = {
             description: "The session started.",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/LogoutResponse" }
+                schema: {
+                  $ref: "#/components/schemas/AuthTransitionResponse"
+                }
               }
             }
           },
@@ -275,7 +277,9 @@ export const apiOpenApiDocument = {
             description: "The session ended.",
             content: {
               "application/json": {
-                schema: { $ref: "#/components/schemas/LogoutResponse" }
+                schema: {
+                  $ref: "#/components/schemas/AuthTransitionResponse"
+                }
               }
             }
           },
@@ -585,7 +589,7 @@ export const apiOpenApiDocument = {
           user: { $ref: "#/components/schemas/AuthUser" }
         }
       },
-      LogoutResponse: {
+      AuthTransitionResponse: {
         type: "object",
         additionalProperties: false,
         required: ["redirectTo"],
