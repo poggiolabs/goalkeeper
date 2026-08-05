@@ -10,6 +10,36 @@ const errorResponse = {
   }
 } as const;
 
+const goalSecurity = [{ bearerAuth: [] }, { cookieAuth: [] }] as const;
+
+const goalErrorResponses = {
+  "400": {
+    description: "The request is invalid.",
+    content: {
+      "application/json": { schema: { $ref: "#/components/schemas/Error" } }
+    }
+  },
+  "401": errorResponse,
+  "403": {
+    description: "The credential lacks the required scope or authority.",
+    content: {
+      "application/json": { schema: { $ref: "#/components/schemas/Error" } }
+    }
+  },
+  "404": {
+    description: "The resource was not found or is not visible to the caller.",
+    content: {
+      "application/json": { schema: { $ref: "#/components/schemas/Error" } }
+    }
+  },
+  "409": {
+    description: "The requested state conflicts with an existing resource.",
+    content: {
+      "application/json": { schema: { $ref: "#/components/schemas/Error" } }
+    }
+  }
+} as const;
+
 export const apiOpenApiDocument = {
   openapi: "3.1.0",
   info: {
@@ -28,6 +58,10 @@ export const apiOpenApiDocument = {
     {
       name: "API Tokens",
       description: "Scoped credentials owned by an organization and user."
+    },
+    {
+      name: "Goals",
+      description: "Organization goals and their label taxonomy."
     }
   ],
   paths: {
@@ -671,6 +705,274 @@ export const apiOpenApiDocument = {
           }
         }
       }
+    },
+    [apiRoutes.goalsList.path]: {
+      get: {
+        operationId: "listGoals",
+        summary: "List goals",
+        description:
+          "Lists goals in the credential's organization, constrained by its own-goals or all-goals scope.",
+        tags: ["Goals"],
+        security: goalSecurity,
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            required: false,
+            schema: { $ref: "#/components/schemas/GoalStatus" }
+          },
+          {
+            name: "ownerUserId",
+            in: "query",
+            required: false,
+            schema: { type: "string", minLength: 1, maxLength: 200 }
+          },
+          {
+            name: "labelId",
+            in: "query",
+            required: false,
+            schema: { type: "string", format: "uuid" }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "Goals visible to the caller.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ListGoalsResponse" }
+              }
+            }
+          },
+          ...goalErrorResponses
+        }
+      },
+      post: {
+        operationId: "createGoal",
+        summary: "Create a goal",
+        description:
+          "Creates an active goal. The owner defaults to the caller and the title defaults to a concise form of the prompt.",
+        tags: ["Goals"],
+        security: goalSecurity,
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateGoalRequest" }
+            }
+          }
+        },
+        responses: {
+          "201": {
+            description: "The created goal.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/GoalResponse" }
+              }
+            }
+          },
+          ...goalErrorResponses
+        }
+      }
+    },
+    [apiRoutes.goalGet.path]: {
+      get: {
+        operationId: "getGoal",
+        summary: "Get a goal",
+        tags: ["Goals"],
+        security: goalSecurity,
+        parameters: [
+          {
+            name: "goalId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "The goal.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/GoalResponse" }
+              }
+            }
+          },
+          ...goalErrorResponses
+        }
+      },
+      patch: {
+        operationId: "updateGoal",
+        summary: "Update a goal",
+        tags: ["Goals"],
+        security: goalSecurity,
+        parameters: [
+          {
+            name: "goalId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdateGoalRequest" }
+            }
+          }
+        },
+        responses: {
+          "200": {
+            description: "The updated goal.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/GoalResponse" }
+              }
+            }
+          },
+          ...goalErrorResponses
+        }
+      },
+      delete: {
+        operationId: "deleteGoal",
+        summary: "Delete a goal",
+        tags: ["Goals"],
+        security: goalSecurity,
+        parameters: [
+          {
+            name: "goalId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" }
+          }
+        ],
+        responses: {
+          "204": { description: "The goal was deleted." },
+          ...goalErrorResponses
+        }
+      }
+    },
+    [apiRoutes.goalLabelsList.path]: {
+      get: {
+        operationId: "listGoalLabels",
+        summary: "List goal labels",
+        tags: ["Goals"],
+        security: goalSecurity,
+        responses: {
+          "200": {
+            description: "Goal labels in the credential's organization.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ListGoalLabelsResponse" }
+              }
+            }
+          },
+          ...goalErrorResponses
+        }
+      },
+      post: {
+        operationId: "createGoalLabel",
+        summary: "Create a goal label",
+        tags: ["Goals"],
+        security: goalSecurity,
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateGoalLabelRequest" }
+            }
+          }
+        },
+        responses: {
+          "201": {
+            description: "The created goal label.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/GoalLabelResponse" }
+              }
+            }
+          },
+          ...goalErrorResponses
+        }
+      }
+    },
+    [apiRoutes.goalLabelGet.path]: {
+      get: {
+        operationId: "getGoalLabel",
+        summary: "Get a goal label",
+        tags: ["Goals"],
+        security: goalSecurity,
+        parameters: [
+          {
+            name: "labelId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "The goal label.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/GoalLabelResponse" }
+              }
+            }
+          },
+          ...goalErrorResponses
+        }
+      },
+      patch: {
+        operationId: "updateGoalLabel",
+        summary: "Update a goal label",
+        tags: ["Goals"],
+        security: goalSecurity,
+        parameters: [
+          {
+            name: "labelId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdateGoalLabelRequest" }
+            }
+          }
+        },
+        responses: {
+          "200": {
+            description: "The updated goal label.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/GoalLabelResponse" }
+              }
+            }
+          },
+          ...goalErrorResponses
+        }
+      },
+      delete: {
+        operationId: "deleteGoalLabel",
+        summary: "Delete an unused goal label",
+        tags: ["Goals"],
+        security: goalSecurity,
+        parameters: [
+          {
+            name: "labelId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" }
+          }
+        ],
+        responses: {
+          "204": { description: "The goal label was deleted." },
+          ...goalErrorResponses
+        }
+      }
     }
   },
   components: {
@@ -812,6 +1114,185 @@ export const apiOpenApiDocument = {
         required: ["member"],
         properties: {
           member: { $ref: "#/components/schemas/OrganizationMember" }
+        }
+      },
+      GoalStatus: {
+        type: "string",
+        enum: ["active", "completed", "paused", "archived"]
+      },
+      GoalLabel: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "id",
+          "organizationId",
+          "name",
+          "color",
+          "description",
+          "createdAt",
+          "createdBy",
+          "updatedAt",
+          "updatedBy"
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          organizationId: { type: "string", format: "uuid" },
+          name: { type: "string", minLength: 1, maxLength: 64 },
+          color: { type: ["string", "null"], minLength: 1, maxLength: 32 },
+          description: {
+            type: ["string", "null"],
+            minLength: 1,
+            maxLength: 500
+          },
+          createdAt: { type: "string", format: "date-time" },
+          createdBy: { type: "string", minLength: 1 },
+          updatedAt: { type: "string", format: "date-time" },
+          updatedBy: { type: "string", minLength: 1 }
+        }
+      },
+      Goal: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "id",
+          "organizationId",
+          "title",
+          "prompt",
+          "status",
+          "ownerUserId",
+          "labels",
+          "measurementMethod",
+          "createdAt",
+          "createdBy",
+          "updatedAt",
+          "updatedBy"
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          organizationId: { type: "string", format: "uuid" },
+          title: { type: "string", minLength: 1, maxLength: 200 },
+          prompt: { type: "string", minLength: 1, maxLength: 50000 },
+          status: { $ref: "#/components/schemas/GoalStatus" },
+          ownerUserId: { type: "string", minLength: 1, maxLength: 200 },
+          labels: {
+            type: "array",
+            maxItems: 20,
+            items: { $ref: "#/components/schemas/GoalLabel" }
+          },
+          measurementMethod: {
+            type: ["string", "null"],
+            minLength: 1,
+            maxLength: 10000
+          },
+          createdAt: { type: "string", format: "date-time" },
+          createdBy: { type: "string", minLength: 1 },
+          updatedAt: { type: "string", format: "date-time" },
+          updatedBy: { type: "string", minLength: 1 }
+        }
+      },
+      GoalResponse: {
+        type: "object",
+        additionalProperties: false,
+        required: ["goal"],
+        properties: { goal: { $ref: "#/components/schemas/Goal" } }
+      },
+      ListGoalsResponse: {
+        type: "object",
+        additionalProperties: false,
+        required: ["goals"],
+        properties: {
+          goals: {
+            type: "array",
+            items: { $ref: "#/components/schemas/Goal" }
+          }
+        }
+      },
+      CreateGoalRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["prompt"],
+        properties: {
+          title: { type: "string", minLength: 1, maxLength: 200 },
+          prompt: { type: "string", minLength: 1, maxLength: 50000 },
+          ownerUserId: { type: "string", minLength: 1, maxLength: 200 },
+          labelIds: {
+            type: "array",
+            maxItems: 20,
+            uniqueItems: true,
+            items: { type: "string", format: "uuid" }
+          },
+          measurementMethod: {
+            type: ["string", "null"],
+            minLength: 1,
+            maxLength: 10000
+          }
+        }
+      },
+      UpdateGoalRequest: {
+        type: "object",
+        additionalProperties: false,
+        minProperties: 1,
+        properties: {
+          title: { type: "string", minLength: 1, maxLength: 200 },
+          prompt: { type: "string", minLength: 1, maxLength: 50000 },
+          status: { $ref: "#/components/schemas/GoalStatus" },
+          ownerUserId: { type: "string", minLength: 1, maxLength: 200 },
+          labelIds: {
+            type: "array",
+            maxItems: 20,
+            uniqueItems: true,
+            items: { type: "string", format: "uuid" }
+          },
+          measurementMethod: {
+            type: ["string", "null"],
+            minLength: 1,
+            maxLength: 10000
+          }
+        }
+      },
+      GoalLabelResponse: {
+        type: "object",
+        additionalProperties: false,
+        required: ["label"],
+        properties: { label: { $ref: "#/components/schemas/GoalLabel" } }
+      },
+      ListGoalLabelsResponse: {
+        type: "object",
+        additionalProperties: false,
+        required: ["labels"],
+        properties: {
+          labels: {
+            type: "array",
+            items: { $ref: "#/components/schemas/GoalLabel" }
+          }
+        }
+      },
+      CreateGoalLabelRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name"],
+        properties: {
+          name: { type: "string", minLength: 1, maxLength: 64 },
+          color: { type: ["string", "null"], minLength: 1, maxLength: 32 },
+          description: {
+            type: ["string", "null"],
+            minLength: 1,
+            maxLength: 500
+          }
+        }
+      },
+      UpdateGoalLabelRequest: {
+        type: "object",
+        additionalProperties: false,
+        minProperties: 1,
+        properties: {
+          name: { type: "string", minLength: 1, maxLength: 64 },
+          color: { type: ["string", "null"], minLength: 1, maxLength: 32 },
+          description: {
+            type: ["string", "null"],
+            minLength: 1,
+            maxLength: 500
+          }
         }
       },
       ApiTokenScopeDefinition: {
@@ -963,6 +1444,18 @@ export const apiOpenApiDocument = {
           error: { type: "string" },
           message: { type: "string" }
         }
+      }
+    },
+    securitySchemes: {
+      bearerAuth: {
+        type: "http",
+        scheme: "bearer",
+        description: "A Goalkeeper API token or provider-issued OAuth access token."
+      },
+      cookieAuth: {
+        type: "apiKey",
+        in: "cookie",
+        name: "goalkeeper_session"
       }
     }
   }

@@ -121,6 +121,16 @@ export function createPostgresOrganizationRepository(
         returning target.user_id, target.display_name, target.email, target.role
       `;
       return rows[0] ? toMember(rows[0]) : null;
+    },
+
+    async getRoleForUser(userId, organizationId) {
+      const [row] = await sql<{ role: OrganizationRole }[]>`
+        select role
+        from organization_memberships
+        where organization_id = ${organizationId}::uuid
+          and user_id = ${userId}
+      `;
+      return row?.role ?? null;
     }
   };
 }

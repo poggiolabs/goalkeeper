@@ -2,28 +2,31 @@ export const apiTokenScopeRegistry = [
   {
     id: "goals:read",
     label: "Read my goals",
-    description: "Read goals owned by the token owner.",
+    description: "Read goals owned by the token owner and organization goal labels.",
     default: true,
     capabilities: ["goals.read.own"]
   },
   {
     id: "goals:write",
     label: "Write my goals",
-    description: "Create, update, and delete goals owned by the token owner.",
+    description:
+      "Create, update, and delete goals owned by the token owner and manage organization goal labels.",
     default: false,
     capabilities: ["goals.write.own"]
   },
   {
     id: "goals:read:all",
     label: "Read all goals",
-    description: "Read every goal visible to the token owner.",
+    description:
+      "Read every goal visible to the token owner and organization goal labels.",
     default: false,
     capabilities: ["goals.read.own", "goals.read.all"]
   },
   {
     id: "goals:write:all",
     label: "Write all goals",
-    description: "Create, update, and delete every goal writable by the token owner.",
+    description:
+      "Create, update, and delete every goal writable by the token owner and manage organization goal labels.",
     default: false,
     capabilities: ["goals.write.own", "goals.write.all"]
   }

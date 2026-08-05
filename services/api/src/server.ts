@@ -9,6 +9,8 @@ import { LogEmailDelivery } from "./auth/email-delivery";
 import { createPostgresEmailAuthBackend } from "./auth/email";
 import { createPostgresOrganizationRepository } from "./organizations/postgres";
 import { createOrganizationService } from "./organizations/service";
+import { createPostgresGoalRepository } from "./goals/postgres";
+import { createGoalService } from "./goals/service";
 
 const host = process.env.API_HOST ?? "0.0.0.0";
 const port = Number(process.env.API_PORT ?? 3001);
@@ -26,6 +28,10 @@ const apiTokens = createApiTokenService(
 const organizations = createOrganizationService(
   createPostgresOrganizationRepository(database)
 );
+const goals = createGoalService(createPostgresGoalRepository(database), {
+  isOrganizationMember: async (userId, organizationId) =>
+    (await organizations.roleForUser(userId, organizationId)) !== null
+});
 if (authProvider !== "email") {
   throw new Error(
     "The standalone API supports AUTH_PROVIDER=email. Inject another AuthBackend into createApiHandler()."
@@ -46,6 +52,7 @@ const auth = createPostgresEmailAuthBackend({
 export const handleApiRequest = createApiHandler({
   webOrigin,
   apiTokens,
+  goals,
   organizations,
   auth
 });

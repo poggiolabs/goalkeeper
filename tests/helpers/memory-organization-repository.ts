@@ -93,6 +93,13 @@ export class MemoryOrganizationRepository implements OrganizationRepository {
     return { ...member };
   }
 
+  async getRoleForUser(
+    userId: string,
+    organizationId: string
+  ): Promise<OrganizationRole | null> {
+    return this.memberships.get(organizationId)?.get(userId)?.role ?? null;
+  }
+
   addMember(
     organizationId: string,
     user: AuthUser,

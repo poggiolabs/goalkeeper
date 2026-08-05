@@ -416,6 +416,90 @@ export async function migrateApiDatabase(sql: SQL): Promise<void> {
         values ('006_namespace_scopes')
       `;
     }
+
+    const goalsApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '007_goals_and_labels'
+    `;
+    if (goalsApplied.length === 0) {
+      await transaction`
+        create table goal_labels (
+          id uuid primary key default gen_random_uuid(),
+          organization_id uuid not null references organizations(id) on delete cascade,
+          name text not null,
+          color text,
+          description text,
+          created_at timestamptz not null default now(),
+          created_by text not null,
+          updated_at timestamptz not null default now(),
+          updated_by text not null,
+          constraint goal_labels_name_length_check
+            check (char_length(name) between 1 and 64),
+          constraint goal_labels_color_length_check
+            check (color is null or char_length(color) between 1 and 32),
+          constraint goal_labels_description_length_check
+            check (description is null or char_length(description) between 1 and 500),
+          unique (organization_id, id)
+        )
+      `;
+      await transaction`
+        create unique index goal_labels_organization_name_idx
+        on goal_labels (organization_id, lower(name))
+      `;
+      await transaction`
+        create table goals (
+          id uuid primary key default gen_random_uuid(),
+          organization_id uuid not null references organizations(id) on delete cascade,
+          title text not null,
+          prompt text not null,
+          status text not null default 'active',
+          owner_user_id text not null,
+          measurement_method text,
+          created_at timestamptz not null default now(),
+          created_by text not null,
+          updated_at timestamptz not null default now(),
+          updated_by text not null,
+          constraint goals_title_length_check
+            check (char_length(title) between 1 and 200),
+          constraint goals_prompt_length_check
+            check (char_length(prompt) between 1 and 50000),
+          constraint goals_status_check
+            check (status in ('active', 'completed', 'paused', 'archived')),
+          constraint goals_measurement_method_length_check
+            check (
+              measurement_method is null
+              or char_length(measurement_method) between 1 and 10000
+            ),
+          unique (organization_id, id),
+          constraint goals_owner_membership_fk
+            foreign key (organization_id, owner_user_id)
+            references organization_memberships (organization_id, user_id)
+        )
+      `;
+      await transaction`
+        create index goals_organization_updated_idx
+        on goals (organization_id, updated_at desc)
+      `;
+      await transaction`
+        create index goals_organization_owner_updated_idx
+        on goals (organization_id, owner_user_id, updated_at desc)
+      `;
+      await transaction`
+        create table goal_label_assignments (
+          goal_id uuid not null references goals(id) on delete cascade,
+          label_id uuid not null references goal_labels(id) on delete restrict,
+          created_at timestamptz not null default now(),
+          primary key (goal_id, label_id)
+        )
+      `;
+      await transaction`
+        create index goal_label_assignments_label_idx
+        on goal_label_assignments (label_id, goal_id)
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('007_goals_and_labels')
+      `;
+    }
   });
 }
 
