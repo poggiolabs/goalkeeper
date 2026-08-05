@@ -21,7 +21,41 @@ Goalkeeper follows Semantic Versioning with `vMAJOR.MINOR.PATCH` Git tags.
 The root `package.json` is the source version. Goalkeeper is distributed under
 the Apache License 2.0.
 
-## Release process
+## Release automation
+
+Three workflows divide preparation, validation, and publication:
+
+| Trigger | Workflow | Responsibility |
+| --- | --- | --- |
+| Push to `main` | `release.yml` | Open or update the Release Please pull request. After that pull request merges, create the tag and draft GitHub Release, then call the publication workflow. |
+| Pull request or push to `main` | `ci.yml` | Typecheck, test with PostgreSQL, build, verify generated files, build the static browser distribution, and build all three container images without publishing them. |
+| Release workflow call or manual dispatch | `publish-artifacts.yml` | Validate the immutable tag, rebuild and attest release artifacts, publish images and files, then make the draft GitHub Release public. |
+
+The release workflow is the only automated tag creator. Release tags are
+immutable and must never be created, moved, or replaced manually.
+
+## Repository configuration
+
+Configure a fine-grained `RELEASE_PLEASE_TOKEN` Actions secret scoped only to
+this repository with these repository permissions:
+
+- Contents: read and write;
+- Pull requests: read and write.
+
+Release Please uses this token instead of the repository `GITHUB_TOKEN` so
+creating or updating its pull request triggers the normal pull-request checks.
+Artifact publication uses the short-lived repository `GITHUB_TOKEN` with the
+job-specific package, content, attestation, and OIDC permissions declared in
+the workflows.
+
+Before a public release, confirm that:
+
+- branch protection requires the release pull request's CI checks;
+- the `goalkeeper-api`, `goalkeeper-mcp`, and `goalkeeper-web` GHCR packages
+  inherit the intended visibility from this repository; and
+- GitHub Actions is permitted to publish packages and provenance attestations.
+
+## Preparing a release
 
 Release Please maintains one release pull request from Conventional Commit
 messages on `main`:
@@ -30,33 +64,65 @@ messages on `main`:
 - `feat:` proposes a minor release;
 - a `BREAKING CHANGE:` footer or `!` proposes an incompatible release.
 
-Merging the release pull request updates `package.json` and `CHANGELOG.md`,
-creates the matching tag, and creates a draft GitHub Release. Publication then:
+Before `1.0.0`, the configured `bump-minor-pre-major` policy keeps incompatible
+changes on the pre-GA minor line. The bootstrap release is `0.1.0`.
 
-1. verifies the immutable tag and reruns generated-contract, typecheck, test,
-   build, and PostgreSQL migration checks against the tagged source;
-2. attaches the static browser distribution, checksum, and provenance bundle;
-3. publishes the API, MCP, and web OCI images for `linux/amd64` and
-   `linux/arm64` with provenance attestations; and
-4. publishes the GitHub Release only after every artifact succeeds.
+Each push to `main` reruns `release.yml`. Release Please updates the same pull
+request, including:
 
-Configure a fine-grained `RELEASE_PLEASE_TOKEN` Actions secret with repository
-Contents and Pull requests write access. Release Please uses this token so its
-pull request triggers normal pull-request workflows. Artifact publication uses
-the repository-scoped `GITHUB_TOKEN`.
+- the version in `package.json`;
+- the version recorded in `.release-please-manifest.json`; and
+- the generated `CHANGELOG.md` entry.
 
-Before the first public release, confirm the three GHCR packages inherit public
-visibility from this repository and require CI on the release pull request.
+Review the proposed version and changelog, then require all CI jobs to pass.
+The four artifact-oriented checks on the pull request are:
 
-If publication fails, the GitHub Release remains a draft. The artifact workflow
-can republish an existing immutable tag:
+- `Build web distribution`;
+- `Build goalkeeper-api image`;
+- `Build goalkeeper-mcp image`;
+- `Build goalkeeper-web image`.
+
+These checks prove that the artifacts can be constructed from the release
+commit. They do not push images, create attestations, or modify a GitHub
+Release.
+
+## Publishing a release
+
+Merging the release pull request causes the next `release.yml` run to create
+the matching `vMAJOR.MINOR.PATCH` tag and a draft GitHub Release. It then calls
+`publish-artifacts.yml` with that tag. Publication proceeds in this order:
+
+1. check out the tag and verify that it exactly matches the version in
+   `package.json`;
+2. verify that the tag resolves to the checked-out commit;
+3. regenerate contracts and run the full typecheck, test, build, and PostgreSQL
+   migration suite against the tag;
+4. create, verify, checksum, attest, and attach the static browser
+   distribution;
+5. build and push the API, MCP, and web images for `linux/amd64` and
+   `linux/arm64`, then attach registry provenance attestations; and
+6. change the GitHub Release from draft to published only after every preceding
+   job succeeds.
+
+## Failure and retry behavior
+
+If validation or artifact publication fails, the GitHub Release remains a
+draft. Fix the workflow or transient external failure without moving the tag,
+then rerun publication for the existing tag:
 
 ```sh
-gh workflow run publish-artifacts.yml --ref v0.1.0 -f ref=v0.1.0
+version=0.1.0
+gh workflow run publish-artifacts.yml \
+  --repo poggiolabs/goalkeeper \
+  --ref "v$version" \
+  -f ref="v$version"
 ```
 
-The dispatch ref and input must identify the same tag so provenance resolves to
-the release commit. Release tags must never move.
+The workflow dispatch ref and `ref` input must name the same tag. This ensures
+that checkout, version validation, provenance identity, and published artifact
+labels all resolve to one release commit. Uploads use replacement semantics for
+the draft release assets, and image publication is repeatable for the same
+immutable source tag.
 
 ## Published artifacts
 
