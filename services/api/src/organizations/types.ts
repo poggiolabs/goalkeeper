@@ -42,4 +42,8 @@ export interface OrganizationRepository {
     memberUserId: string,
     role: Exclude<OrganizationRole, "owner">
   ): Promise<OrganizationMember | null>;
+  getRoleForUser(
+    userId: string,
+    organizationId: string
+  ): Promise<OrganizationRole | null>;
 }

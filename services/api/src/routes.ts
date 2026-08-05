@@ -74,5 +74,49 @@ export const apiRoutes = {
   apiTokenRevoke: {
     method: "DELETE",
     path: "/v1/api-tokens/{tokenId}"
+  },
+  goalsList: {
+    method: "GET",
+    path: "/v1/goals"
+  },
+  goalsCreate: {
+    method: "POST",
+    path: "/v1/goals"
+  },
+  goalGet: {
+    method: "GET",
+    path: "/v1/goals/{goalId}"
+  },
+  goalUpdate: {
+    method: "PATCH",
+    path: "/v1/goals/{goalId}"
+  },
+  goalUpdatesList: {
+    method: "GET",
+    path: "/v1/goals/{goalId}/updates"
+  },
+  goalUpdatesCreate: {
+    method: "POST",
+    path: "/v1/goals/{goalId}/updates"
+  },
+  goalLabelsList: {
+    method: "GET",
+    path: "/v1/goal-labels"
+  },
+  goalLabelsCreate: {
+    method: "POST",
+    path: "/v1/goal-labels"
+  },
+  goalLabelGet: {
+    method: "GET",
+    path: "/v1/goal-labels/{labelId}"
+  },
+  goalLabelUpdate: {
+    method: "PATCH",
+    path: "/v1/goal-labels/{labelId}"
+  },
+  goalLabelDelete: {
+    method: "DELETE",
+    path: "/v1/goal-labels/{labelId}"
   }
 } as const;

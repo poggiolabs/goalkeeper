@@ -4,8 +4,17 @@ import {
   type AuthBackend,
   type AuthTransition
 } from "./auth/types";
-import { ApiTokenError, type ApiTokenService } from "./api-tokens/service";
+import {
+  ApiTokenError,
+  authorizeApiToken,
+  type ApiTokenService
+} from "./api-tokens/service";
 import { apiTokenScopeRegistry } from "./api-tokens/types";
+import {
+  GoalError,
+  type GoalAccess,
+  type GoalService
+} from "./goals/service";
 import {
   OrganizationError,
   type OrganizationService
@@ -15,6 +24,7 @@ import { apiRoutes } from "./routes";
 export type ApiDependencies = {
   auth: AuthBackend;
   apiTokens: ApiTokenService;
+  goals: GoalService;
   organizations: OrganizationService;
   webOrigin: string;
 };
@@ -38,7 +48,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
       return session
         ? sensitiveJson(
             {
-              ...session,
+              user: session.user,
               ...(await dependencies.organizations.ensureForUser(session.user))
             },
             200,
@@ -389,8 +399,284 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
     }
 
+    if (matches(request, apiRoutes.goalsList)) {
+      try {
+        const resolved = await resolveGoalAccess(request, dependencies, "read");
+        if (!resolved) {
+          return unauthorizedResponse(dependencies.auth, request, webOrigin);
+        }
+        return sensitiveJson(
+          await dependencies.goals.listGoals(resolved.access, url.searchParams),
+          200,
+          webOrigin
+        );
+      } catch (error) {
+        return goalRouteErrorResponse(error, webOrigin);
+      }
+    }
+
+    if (matches(request, apiRoutes.goalsCreate)) {
+      try {
+        const resolved = await resolveGoalAccess(request, dependencies, "write");
+        if (!resolved) {
+          return unauthorizedResponse(dependencies.auth, request, webOrigin);
+        }
+        if (resolved.session && !hasAllowedOrigin(request, webOrigin)) {
+          return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+        }
+        return sensitiveJson(
+          await dependencies.goals.createGoal(resolved.access, await request.json()),
+          201,
+          webOrigin
+        );
+      } catch (error) {
+        return goalRouteErrorResponse(error, webOrigin);
+      }
+    }
+
+    if (matches(request, apiRoutes.goalLabelsList)) {
+      try {
+        const resolved = await resolveGoalAccess(request, dependencies, "read");
+        if (!resolved) {
+          return unauthorizedResponse(dependencies.auth, request, webOrigin);
+        }
+        return sensitiveJson(
+          await dependencies.goals.listLabels(resolved.access),
+          200,
+          webOrigin
+        );
+      } catch (error) {
+        return goalRouteErrorResponse(error, webOrigin);
+      }
+    }
+
+    if (matches(request, apiRoutes.goalLabelsCreate)) {
+      try {
+        const resolved = await resolveGoalAccess(request, dependencies, "write");
+        if (!resolved) {
+          return unauthorizedResponse(dependencies.auth, request, webOrigin);
+        }
+        if (resolved.session && !hasAllowedOrigin(request, webOrigin)) {
+          return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+        }
+        return sensitiveJson(
+          await dependencies.goals.createLabel(resolved.access, await request.json()),
+          201,
+          webOrigin
+        );
+      } catch (error) {
+        return goalRouteErrorResponse(error, webOrigin);
+      }
+    }
+
+    const goalUpdatesMatch = matchGoalUpdatesRoute(request);
+    if (goalUpdatesMatch) {
+      const operation = request.method === "GET" ? "read" : "write";
+      try {
+        const resolved = await resolveGoalAccess(
+          request,
+          dependencies,
+          operation
+        );
+        if (!resolved) {
+          return unauthorizedResponse(dependencies.auth, request, webOrigin);
+        }
+        if (
+          operation === "write" &&
+          resolved.session &&
+          !hasAllowedOrigin(request, webOrigin)
+        ) {
+          return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+        }
+        if (request.method === "GET") {
+          return sensitiveJson(
+            await dependencies.goals.listUpdates(
+              resolved.access,
+              goalUpdatesMatch
+            ),
+            200,
+            webOrigin
+          );
+        }
+        return sensitiveJson(
+          await dependencies.goals.reportUpdate(
+            resolved.access,
+            goalUpdatesMatch,
+            await request.json()
+          ),
+          201,
+          webOrigin
+        );
+      } catch (error) {
+        return goalRouteErrorResponse(error, webOrigin);
+      }
+    }
+
+    const goalMatch = matchResourceRoute(request, "/v1/goals/", ["GET", "PATCH"]);
+    if (goalMatch) {
+      const operation = request.method === "GET" ? "read" : "write";
+      try {
+        const resolved = await resolveGoalAccess(
+          request,
+          dependencies,
+          operation
+        );
+        if (!resolved) {
+          return unauthorizedResponse(dependencies.auth, request, webOrigin);
+        }
+        if (
+          operation === "write" &&
+          resolved.session &&
+          !hasAllowedOrigin(request, webOrigin)
+        ) {
+          return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+        }
+        if (request.method === "GET") {
+          return sensitiveJson(
+            await dependencies.goals.getGoal(resolved.access, goalMatch),
+            200,
+            webOrigin
+          );
+        }
+        if (request.method === "PATCH") {
+          return sensitiveJson(
+            await dependencies.goals.updateGoal(
+              resolved.access,
+              goalMatch,
+              await request.json()
+            ),
+            200,
+            webOrigin
+          );
+        }
+        return json({ error: "method_not_allowed" }, 405, webOrigin);
+      } catch (error) {
+        return goalRouteErrorResponse(error, webOrigin);
+      }
+    }
+
+    const labelMatch = matchResourceRoute(request, "/v1/goal-labels/");
+    if (labelMatch) {
+      const operation = request.method === "GET" ? "read" : "write";
+      try {
+        const resolved = await resolveGoalAccess(
+          request,
+          dependencies,
+          operation
+        );
+        if (!resolved) {
+          return unauthorizedResponse(dependencies.auth, request, webOrigin);
+        }
+        if (
+          operation === "write" &&
+          resolved.session &&
+          !hasAllowedOrigin(request, webOrigin)
+        ) {
+          return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+        }
+        if (request.method === "GET") {
+          return sensitiveJson(
+            await dependencies.goals.getLabel(resolved.access, labelMatch),
+            200,
+            webOrigin
+          );
+        }
+        if (request.method === "PATCH") {
+          return sensitiveJson(
+            await dependencies.goals.updateLabel(
+              resolved.access,
+              labelMatch,
+              await request.json()
+            ),
+            200,
+            webOrigin
+          );
+        }
+        await dependencies.goals.deleteLabel(resolved.access, labelMatch);
+        return sensitiveEmpty(204, webOrigin);
+      } catch (error) {
+        return goalRouteErrorResponse(error, webOrigin);
+      }
+    }
+
     return json({ error: "not_found" }, 404, webOrigin);
   };
+}
+
+async function resolveGoalAccess(
+  request: Request,
+  dependencies: ApiDependencies,
+  operation: "read" | "write"
+): Promise<{ access: GoalAccess; session: boolean } | null> {
+  const authorization = request.headers.get("authorization");
+  if (authorization) {
+    const principal = await dependencies.apiTokens.resolveRequest(request);
+    if (!principal) {
+      throw new ApiTokenError("invalid_api_token", "Invalid API token", 401);
+    }
+    const allScope = `goals:${operation}:all` as const;
+    const action = principal.scopes.includes(allScope)
+      ? `goals.${operation}.all`
+      : `goals.${operation}.own`;
+    const role = await dependencies.organizations.roleForUser(
+      principal.userId,
+      principal.organizationId
+    );
+    await authorizeApiToken(principal, action, () => {
+      if (!role) return false;
+      return action !== "goals.write.all" || role === "owner" || role === "admin";
+    });
+    return {
+      access: {
+        userId: principal.userId,
+        organizationId: principal.organizationId,
+        readAll: action === "goals.read.all",
+        writeAll: action === "goals.write.all",
+        actor: { kind: "client", id: principal.tokenId, runId: null },
+        authentication: { kind: "api_token", subjectId: principal.tokenId },
+        clientInfo: null
+      },
+      session: false
+    };
+  }
+
+  const session = await dependencies.auth.getSession(request);
+  if (!session) return null;
+  const context = await dependencies.organizations.ensureForUser(session.user);
+  const active = context.organizations.find(
+    (organization) => organization.id === context.activeOrganizationId
+  );
+  if (!active) return null;
+  return {
+    access: {
+      userId: session.user.id,
+      organizationId: active.id,
+      readAll: true,
+      writeAll: active.role === "owner" || active.role === "admin",
+      actor: { kind: "user", id: session.user.id, runId: null },
+      authentication: { kind: "session", subjectId: session.id },
+      clientInfo: null
+    },
+    session: true
+  };
+}
+
+function goalRouteErrorResponse(error: unknown, webOrigin: string): Response {
+  if (error instanceof GoalError || error instanceof ApiTokenError) {
+    return sensitiveJson(
+      { error: error.code, message: error.message },
+      error.status,
+      webOrigin
+    );
+  }
+  if (error instanceof SyntaxError) {
+    return sensitiveJson(
+      { error: "invalid_json", message: "Request body must be valid JSON" },
+      400,
+      webOrigin
+    );
+  }
+  throw error;
 }
 
 function organizationErrorResponse(
@@ -529,6 +815,38 @@ function matchOrganizationMemberUpdate(request: Request): string | null {
   }
 }
 
+function matchResourceRoute(
+  request: Request,
+  prefix: string,
+  methods: readonly string[] = ["GET", "PATCH", "DELETE"]
+): string | null {
+  if (!methods.includes(request.method)) {
+    return null;
+  }
+  const pathname = new URL(request.url).pathname;
+  if (!pathname.startsWith(prefix)) return null;
+  const encoded = pathname.slice(prefix.length);
+  if (!encoded || encoded.includes("/")) return null;
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return null;
+  }
+}
+
+function matchGoalUpdatesRoute(request: Request): string | null {
+  if (request.method !== "GET" && request.method !== "POST") return null;
+  const match = new URL(request.url).pathname.match(
+    /^\/v1\/goals\/([^/]+)\/updates$/
+  );
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
 function redirect(transition: AuthTransition, webOrigin: string): Response {
   const headers = new Headers(transition.headers);
   headers.set("location", transition.redirectTo);
@@ -573,6 +891,13 @@ function sensitiveJson(
     status,
     webOrigin,
     sensitiveHeaders(extraHeaders, noReferrer)
+  );
+}
+
+function sensitiveEmpty(status: number, webOrigin: string): Response {
+  return responseWithCors(
+    new Response(null, { status, headers: sensitiveHeaders() }),
+    webOrigin
   );
 }
 

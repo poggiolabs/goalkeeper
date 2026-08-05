@@ -100,6 +100,7 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL email authentication", () => {
       headers: { cookie }
     });
     await expect(auth.getSession(request)).resolves.toEqual({
+      id: expect.any(String),
       user: {
         id: expect.any(String),
         email,
@@ -114,6 +115,7 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL email authentication", () => {
       emailDelivery: delivery
     });
     await expect(restartedAuth.getSession(request)).resolves.toEqual({
+      id: expect.any(String),
       user: {
         id: expect.any(String),
         email,

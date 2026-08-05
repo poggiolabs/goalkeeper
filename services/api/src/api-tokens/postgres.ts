@@ -416,6 +416,270 @@ export async function migrateApiDatabase(sql: SQL): Promise<void> {
         values ('006_namespace_scopes')
       `;
     }
+
+    const goalsApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '007_goals_and_labels'
+    `;
+    if (goalsApplied.length === 0) {
+      await transaction`
+        create table goal_labels (
+          id uuid primary key default gen_random_uuid(),
+          organization_id uuid not null references organizations(id) on delete cascade,
+          name text not null,
+          color text,
+          description text,
+          created_at timestamptz not null default now(),
+          created_by text not null,
+          updated_at timestamptz not null default now(),
+          updated_by text not null,
+          constraint goal_labels_name_length_check
+            check (char_length(name) between 1 and 64),
+          constraint goal_labels_color_length_check
+            check (color is null or char_length(color) between 1 and 32),
+          constraint goal_labels_description_length_check
+            check (description is null or char_length(description) between 1 and 500)
+        )
+      `;
+      await transaction`
+        create unique index goal_labels_organization_name_idx
+        on goal_labels (organization_id, lower(name))
+      `;
+      await transaction`
+        create table goals (
+          id uuid primary key default gen_random_uuid(),
+          organization_id uuid not null references organizations(id) on delete cascade,
+          title text not null,
+          prompt text not null,
+          status text not null default 'active',
+          owner_user_id text not null,
+          measurement_method text,
+          created_at timestamptz not null default now(),
+          created_by text not null,
+          updated_at timestamptz not null default now(),
+          updated_by text not null,
+          constraint goals_title_length_check
+            check (char_length(title) between 1 and 200),
+          constraint goals_prompt_length_check
+            check (char_length(prompt) between 1 and 50000),
+          constraint goals_status_check
+            check (status in ('active', 'completed', 'paused', 'archived')),
+          constraint goals_measurement_method_length_check
+            check (
+              measurement_method is null
+              or char_length(measurement_method) between 1 and 10000
+            ),
+          constraint goals_owner_membership_fk
+            foreign key (organization_id, owner_user_id)
+            references organization_memberships (organization_id, user_id)
+        )
+      `;
+      await transaction`
+        create index goals_organization_updated_idx
+        on goals (organization_id, updated_at desc)
+      `;
+      await transaction`
+        create index goals_organization_owner_updated_idx
+        on goals (organization_id, owner_user_id, updated_at desc)
+      `;
+      await transaction`
+        create table goal_label_assignments (
+          goal_id uuid not null references goals(id) on delete cascade,
+          label_id uuid not null references goal_labels(id) on delete restrict,
+          created_at timestamptz not null default now(),
+          primary key (goal_id, label_id)
+        )
+      `;
+      await transaction`
+        create index goal_label_assignments_label_idx
+        on goal_label_assignments (label_id, goal_id)
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('007_goals_and_labels')
+      `;
+    }
+
+    const goalFieldsApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '008_goal_fields'
+    `;
+    if (goalFieldsApplied.length === 0) {
+      await transaction`
+        create type goal_status as enum (
+          'active',
+          'completed',
+          'paused',
+          'archived'
+        )
+      `;
+      await transaction`
+        alter table goals
+          drop constraint goals_status_check,
+          alter column status drop default,
+          alter column status type goal_status using status::goal_status,
+          alter column status set default 'active'::goal_status
+      `;
+      await transaction`
+        alter table goals
+        rename column prompt to detailed_description
+      `;
+      await transaction`
+        alter table goals
+          drop constraint goals_prompt_length_check,
+          add constraint goals_detailed_description_check
+            check (char_length(detailed_description) >= 1),
+          add column criteria jsonb not null default '[]'::jsonb,
+          add constraint goals_criteria_array_check
+            check (
+              jsonb_typeof(criteria) = 'array'
+              and jsonb_array_length(criteria) <= 100
+            )
+      `;
+      await transaction`
+        update goals
+        set criteria = jsonb_build_array(
+          jsonb_build_object(
+            'title', 'Measurement method',
+            'description', measurement_method
+          )
+        )
+        where measurement_method is not null
+      `;
+      await transaction`
+        alter table goals
+          drop constraint goals_measurement_method_length_check,
+          drop column measurement_method
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('008_goal_fields')
+      `;
+    }
+
+    const goalUpdatesApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '009_goal_updates'
+    `;
+    if (goalUpdatesApplied.length === 0) {
+      await transaction`
+        create type goal_actor_kind as enum ('user', 'client', 'agent')
+      `;
+      await transaction`
+        create type goal_authn_kind as enum (
+          'session',
+          'api_token',
+          'oauth',
+          'unknown'
+        )
+      `;
+      await transaction`
+        alter table goal_labels
+        rename column created_by to created_by_user_id
+      `;
+      await transaction`
+        alter table goal_labels
+        rename column updated_by to updated_by_user_id
+      `;
+      await transaction`
+        alter table goals
+        rename column created_by to created_by_user_id
+      `;
+      await transaction`
+        alter table goals
+        rename column updated_by to updated_by_user_id
+      `;
+      await transaction`
+        alter table goals
+          add column revision bigint not null default 1,
+          add constraint goals_revision_check check (revision >= 1)
+      `;
+      await transaction`
+        create unique index if not exists goals_organization_id_id_key
+        on goals (organization_id, id)
+      `;
+      await transaction`
+        create table goal_updates (
+          id uuid primary key default gen_random_uuid(),
+          organization_id uuid not null,
+          goal_id uuid not null,
+          revision bigint not null,
+          status goal_status not null,
+          summary text not null,
+          details text not null,
+          authority_user_id text not null,
+          actor_kind goal_actor_kind not null,
+          actor_id text not null,
+          actor_run_id text,
+          authn_kind goal_authn_kind not null,
+          authn_subject_id text,
+          client_name text,
+          client_version text,
+          idempotency_key text not null,
+          created_at timestamptz not null default now(),
+          constraint goal_updates_goal_fk
+            foreign key (organization_id, goal_id)
+            references goals (organization_id, id),
+          constraint goal_updates_revision_check check (revision >= 1),
+          constraint goal_updates_summary_length_check
+            check (char_length(summary) between 1 and 500),
+          constraint goal_updates_details_check
+            check (char_length(details) >= 1),
+          constraint goal_updates_actor_id_check
+            check (char_length(actor_id) between 1 and 200),
+          constraint goal_updates_actor_run_check
+            check (actor_run_id is null or actor_kind = 'agent'),
+          constraint goal_updates_authn_subject_check
+            check (
+              (authn_kind = 'unknown' and authn_subject_id is null)
+              or (authn_kind <> 'unknown' and authn_subject_id is not null)
+            ),
+          constraint goal_updates_client_info_check
+            check (
+              (client_name is null and client_version is null)
+              or (
+                char_length(client_name) between 1 and 200
+                and char_length(client_version) between 1 and 100
+              )
+            ),
+          constraint goal_updates_idempotency_key_check
+            check (char_length(idempotency_key) between 1 and 200),
+          unique (goal_id, revision),
+          unique (goal_id, idempotency_key)
+        )
+      `;
+      await transaction`
+        insert into goal_updates (
+          organization_id,
+          goal_id,
+          revision,
+          status,
+          summary,
+          details,
+          authority_user_id,
+          actor_kind,
+          actor_id,
+          authn_kind,
+          idempotency_key,
+          created_at
+        )
+        select
+          organization_id,
+          id,
+          1,
+          status,
+          'Goal created',
+          'Initial goal state.',
+          created_by_user_id,
+          'user'::goal_actor_kind,
+          created_by_user_id,
+          'unknown'::goal_authn_kind,
+          'goal-created',
+          created_at
+        from goals
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('009_goal_updates')
+      `;
+    }
   });
 }
 

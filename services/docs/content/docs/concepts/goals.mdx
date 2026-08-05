@@ -9,3 +9,27 @@ responsible for the work.
 
 Goals should be specific enough to evaluate, durable across individual agent
 runs, and explicit about any constraints that affect completion.
+
+Each goal belongs to an organization and records a short title, a long-form
+detailed description that may contain Markdown, an accountable organization
+member, an ordered list of titled success criteria, and a lifecycle status:
+`active`, `paused`, `completed`, or `archived`. Organization-defined labels
+provide stable taxonomy and can be renamed without changing goal references.
+
+Status is a projection of an append-only update sequence. Creating a goal
+records revision 1; every subsequent status report supplies a summary, a
+long-form Markdown-capable description, the expected current revision, and an
+idempotency key. Appending the report and advancing the goal's status and
+revision happen atomically. Metadata updates cannot change status, and goals
+are archived through a status report rather than hard-deleted.
+
+Each update records the authorizing user separately from the immediate actor.
+The actor can be a user, client, or verified agent, with an optional agent run
+identifier. Authentication provenance records the verified session, API-token
+record, or OAuth client that established authority. MCP client name and version
+are retained only as descriptive client metadata; self-reported values do not
+establish identity.
+
+Schedules and execution runs are intentionally outside the goal state model.
+They can be introduced as separate domains if their lifecycle and ownership
+requirements become clear.

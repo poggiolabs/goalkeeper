@@ -7,14 +7,23 @@ import { MemoryApiTokenRepository } from "./helpers/memory-api-token-repository"
 import { MemoryEmailAuthBackend } from "./helpers/memory-email-auth-backend";
 import { MemoryOrganizationRepository } from "./helpers/memory-organization-repository";
 import { createOrganizationService } from "../services/api/src/organizations/service";
+import { MemoryGoalRepository } from "./helpers/memory-goal-repository";
+import { createGoalService } from "../services/api/src/goals/service";
 
 const webOrigin = "http://localhost:3000";
 const authBackend = new MemoryEmailAuthBackend(webOrigin);
 const organizationRepository = new MemoryOrganizationRepository();
+const goalRepository = new MemoryGoalRepository();
+const organizations = createOrganizationService(organizationRepository);
+const apiTokens = createApiTokenService(new MemoryApiTokenRepository());
 const handleApiRequest = createApiHandler({
   webOrigin,
-  apiTokens: createApiTokenService(new MemoryApiTokenRepository()),
-  organizations: createOrganizationService(organizationRepository),
+  apiTokens,
+  organizations,
+  goals: createGoalService(goalRepository, {
+    isOrganizationMember: async (userId, organizationId) =>
+      (await organizations.roleForUser(userId, organizationId)) !== null
+  }),
   auth: authBackend
 });
 
@@ -49,6 +58,200 @@ describe("REST API contract", () => {
     expect(response.headers.get("access-control-allow-methods")).toBe(
       "GET, POST, PATCH, DELETE, OPTIONS"
     );
+  });
+});
+
+describe("goal REST contract", () => {
+  async function authenticatedGoalUser() {
+    const email = `${crypto.randomUUID()}@example.com`;
+    const user = authBackend.addVerifiedUser({
+      email,
+      password: "correct horse battery staple",
+      displayName: "Goal User"
+    });
+    const login = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.authEmailLogin.path}`, {
+        method: "POST",
+        headers: { origin: webOrigin, "content-type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password: "correct horse battery staple",
+          returnTo: `${webOrigin}/goals`
+        })
+      })
+    );
+    const cookie = login.headers.get("set-cookie") ?? "";
+    const session = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.authSession.path}`, {
+        headers: { cookie }
+      })
+    );
+    const context = (await session.json()) as { activeOrganizationId: string };
+    return { user, cookie, organizationId: context.activeOrganizationId };
+  }
+
+  test("serves label and goal CRUD to sessions and scoped API tokens", async () => {
+    const { user, cookie, organizationId } = await authenticatedGoalUser();
+    const labelResponse = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.goalLabelsCreate.path}`, {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ name: "Launch", color: "#22c55e" })
+      })
+    );
+    expect(labelResponse.status).toBe(201);
+    const { label } = (await labelResponse.json()) as { label: { id: string } };
+
+    const createResponse = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.goalsCreate.path}`, {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          detailedDescription: "Launch the first durable goals API",
+          criteria: [
+            {
+              title: "Available",
+              description: "The API serves durable goal state."
+            }
+          ],
+          labelIds: [label.id]
+        })
+      })
+    );
+    expect(createResponse.status).toBe(201);
+    const { goal } = (await createResponse.json()) as { goal: { id: string } };
+
+    const readToken = await apiTokens.create(user.id, organizationId, {
+      name: "MCP reader",
+      scopes: ["goals:read"]
+    });
+    const listResponse = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.goalsList.path}`, {
+        headers: { authorization: `Bearer ${readToken.secret}` }
+      })
+    );
+    expect(listResponse.status).toBe(200);
+    expect(await listResponse.json()).toMatchObject({
+      goals: [{ id: goal.id, labels: [{ id: label.id }] }]
+    });
+
+    const denied = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.goalsCreate.path}`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${readToken.secret}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          detailedDescription: "This must not be created"
+        })
+      })
+    );
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ error: "insufficient_scope" });
+
+    const writeToken = await apiTokens.create(user.id, organizationId, {
+      name: "MCP writer",
+      scopes: ["goals:write"]
+    });
+    const tokenCreate = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.goalsCreate.path}`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${writeToken.secret}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          detailedDescription: "Create without a browser origin"
+        })
+      })
+    );
+    expect(tokenCreate.status).toBe(201);
+
+    const updateResponse = await handleApiRequest(
+      new Request(
+        `http://localhost/v1/goals/${goal.id}/updates`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${writeToken.secret}`,
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            status: "completed",
+            summary: "Launch complete",
+            details: "The durable goals API is available.",
+            expectedRevision: 1,
+            idempotencyKey: "launch-complete"
+          })
+        }
+      )
+    );
+    expect(updateResponse.status).toBe(201);
+    expect(await updateResponse.json()).toMatchObject({
+      update: {
+        goalId: goal.id,
+        revision: 2,
+        status: "completed",
+        authorityUserId: user.id,
+        actor: { kind: "client", id: writeToken.token.id, runId: null },
+        authentication: {
+          kind: "api_token",
+          subjectId: writeToken.token.id
+        },
+        clientInfo: null
+      }
+    });
+  });
+
+  test("fails closed for invalid bearer credentials and browser CSRF", async () => {
+    const { cookie } = await authenticatedGoalUser();
+    const invalid = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.goalsList.path}`, {
+        headers: { authorization: "Bearer invalid" }
+      })
+    );
+    expect(invalid.status).toBe(401);
+    expect(await invalid.json()).toMatchObject({ error: "invalid_api_token" });
+
+    const crossOrigin = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.goalsCreate.path}`, {
+        method: "POST",
+        headers: {
+          cookie,
+          origin: "https://example.net",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ detailedDescription: "Blocked" })
+      })
+    );
+    expect(crossOrigin.status).toBe(403);
+  });
+
+  test("documents every goal and label route", () => {
+    expect(apiOpenApiDocument.paths[apiRoutes.goalsList.path].get).toBeDefined();
+    expect(apiOpenApiDocument.paths[apiRoutes.goalsCreate.path].post).toBeDefined();
+    expect(apiOpenApiDocument.paths[apiRoutes.goalGet.path].get).toBeDefined();
+    expect(apiOpenApiDocument.paths[apiRoutes.goalUpdate.path].patch).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.goalUpdatesList.path].get
+    ).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.goalUpdatesCreate.path].post
+    ).toBeDefined();
+    expect(apiOpenApiDocument.paths[apiRoutes.goalLabelsList.path].get).toBeDefined();
+    expect(apiOpenApiDocument.paths[apiRoutes.goalLabelsCreate.path].post).toBeDefined();
+    expect(apiOpenApiDocument.paths[apiRoutes.goalLabelGet.path].get).toBeDefined();
+    expect(apiOpenApiDocument.paths[apiRoutes.goalLabelUpdate.path].patch).toBeDefined();
+    expect(apiOpenApiDocument.paths[apiRoutes.goalLabelDelete.path].delete).toBeDefined();
   });
 });
 

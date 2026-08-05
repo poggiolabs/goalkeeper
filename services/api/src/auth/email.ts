@@ -16,6 +16,7 @@ const verificationTtlMs = 24 * 60 * 60_000;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type UserRow = {
+  session_id: string;
   id: string;
   email: string;
   display_name: string;
@@ -47,6 +48,7 @@ export function createPostgresEmailAuthBackend(options: {
       const tokenHash = await hashToken(secret);
       const [row] = await options.sql<UserRow[]>`
         select
+          s.id as session_id,
           u.id,
           u.email,
           u.display_name,
@@ -354,6 +356,7 @@ function normalizePassword(value: string): string {
 
 function toSession(row: UserRow): AuthSession {
   return {
+    id: row.session_id,
     user: { id: row.id, email: row.email, displayName: row.display_name }
   };
 }

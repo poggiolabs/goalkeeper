@@ -93,6 +93,10 @@ export function createOrganizationService(repository: OrganizationRepository) {
         );
       }
       return { member };
+    },
+
+    roleForUser(userId: string, organizationId: string) {
+      return repository.getRoleForUser(userId, organizationId);
     }
   };
 }
