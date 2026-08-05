@@ -58,5 +58,11 @@ describe("MCP OAuth provider configuration", () => {
         true
       )
     ).not.toThrow();
+    expect(() =>
+      assertOAuthProviderConfiguration(
+        provider("http://[::1]:3000", "http://[::1]:3000/register"),
+        true
+      )
+    ).not.toThrow();
   });
 });

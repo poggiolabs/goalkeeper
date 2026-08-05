@@ -8,10 +8,11 @@ import { createPostgresGoalRepository } from "../../api/src/goals/postgres";
 import { createGoalService } from "../../api/src/goals/service";
 import { createPostgresOrganizationRepository } from "../../api/src/organizations/postgres";
 import { createOrganizationService } from "../../api/src/organizations/service";
+import { parseMcpPort } from "./config";
 import { createGoalkeeperMcpHandler } from "./handler";
 
 const host = process.env.MCP_HOST ?? "127.0.0.1";
-const port = Number(process.env.MCP_PORT ?? 3002);
+const port = parseMcpPort(process.env.MCP_PORT);
 const publicMcpUrl =
   process.env.PUBLIC_MCP_URL ?? `http://127.0.0.1:${port}/mcp`;
 const database = new SQL(

@@ -297,7 +297,7 @@ async function resolveAccess(
   if (!role) {
     throw new ApiTokenError(
       "permission_denied",
-      "The credential owner is no longer an organization member",
+      "The authenticated user is no longer an organization member",
       403
     );
   }
