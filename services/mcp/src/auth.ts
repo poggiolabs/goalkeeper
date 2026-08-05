@@ -117,16 +117,42 @@ export function assertOAuthProviderConfiguration(
   provider: McpOAuthProvider,
   dangerouslyAllowInsecureIssuerUrl: boolean
 ) {
-  const registrationEndpoint = new URL(provider.metadata.registration_endpoint);
+  assertSecureOAuthUrl(
+    provider.metadata.issuer,
+    "issuer",
+    dangerouslyAllowInsecureIssuerUrl
+  );
+  assertSecureOAuthUrl(
+    provider.metadata.registration_endpoint,
+    "dynamic registration endpoint",
+    dangerouslyAllowInsecureIssuerUrl
+  );
+}
+
+function assertSecureOAuthUrl(
+  value: string,
+  label: string,
+  dangerouslyAllowInsecureIssuerUrl: boolean
+) {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`MCP OAuth ${label} must be a valid URL`);
+  }
+  const isLoopback =
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "[::1]";
   if (
-    registrationEndpoint.protocol !== "https:" &&
+    url.protocol !== "https:" &&
     !(
       dangerouslyAllowInsecureIssuerUrl &&
-      (registrationEndpoint.hostname === "localhost" ||
-        registrationEndpoint.hostname === "127.0.0.1")
+      url.protocol === "http:" &&
+      isLoopback
     )
   ) {
-    throw new Error("MCP OAuth dynamic registration endpoint must use HTTPS");
+    throw new Error(`MCP OAuth ${label} must use HTTPS`);
   }
 }
 

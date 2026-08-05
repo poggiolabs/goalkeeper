@@ -12,7 +12,8 @@ import { createGoalkeeperMcpHandler } from "./handler";
 
 const host = process.env.MCP_HOST ?? "127.0.0.1";
 const port = Number(process.env.MCP_PORT ?? 3002);
-const publicMcpUrl = process.env.PUBLIC_MCP_URL ?? `http://localhost:${port}/mcp`;
+const publicMcpUrl =
+  process.env.PUBLIC_MCP_URL ?? `http://127.0.0.1:${port}/mcp`;
 const database = new SQL(
   process.env.DATABASE_URL ??
     "postgresql://goalkeeper:goalkeeper@127.0.0.1:5432/goalkeeper"

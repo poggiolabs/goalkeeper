@@ -29,7 +29,7 @@ The services are available at:
 
 - Web: <http://localhost:3000>
 - REST API: <http://localhost:3001>
-- MCP: <http://localhost:3002/mcp>
+- MCP: <http://127.0.0.1:3002/mcp>
 - Docs: <http://localhost:3003>
 - PostgreSQL: `localhost:5432`
 
