@@ -48,7 +48,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
       return session
         ? sensitiveJson(
             {
-              ...session,
+              user: session.user,
               ...(await dependencies.organizations.ensureForUser(session.user))
             },
             200,
@@ -469,7 +469,50 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
     }
 
-    const goalMatch = matchResourceRoute(request, "/v1/goals/");
+    const goalUpdatesMatch = matchGoalUpdatesRoute(request);
+    if (goalUpdatesMatch) {
+      const operation = request.method === "GET" ? "read" : "write";
+      try {
+        const resolved = await resolveGoalAccess(
+          request,
+          dependencies,
+          operation
+        );
+        if (!resolved) {
+          return unauthorizedResponse(dependencies.auth, request, webOrigin);
+        }
+        if (
+          operation === "write" &&
+          resolved.session &&
+          !hasAllowedOrigin(request, webOrigin)
+        ) {
+          return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+        }
+        if (request.method === "GET") {
+          return sensitiveJson(
+            await dependencies.goals.listUpdates(
+              resolved.access,
+              goalUpdatesMatch
+            ),
+            200,
+            webOrigin
+          );
+        }
+        return sensitiveJson(
+          await dependencies.goals.reportUpdate(
+            resolved.access,
+            goalUpdatesMatch,
+            await request.json()
+          ),
+          201,
+          webOrigin
+        );
+      } catch (error) {
+        return goalRouteErrorResponse(error, webOrigin);
+      }
+    }
+
+    const goalMatch = matchResourceRoute(request, "/v1/goals/", ["GET", "PATCH"]);
     if (goalMatch) {
       const operation = request.method === "GET" ? "read" : "write";
       try {
@@ -506,8 +549,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
             webOrigin
           );
         }
-        await dependencies.goals.deleteGoal(resolved.access, goalMatch);
-        return sensitiveEmpty(204, webOrigin);
+        return json({ error: "method_not_allowed" }, 405, webOrigin);
       } catch (error) {
         return goalRouteErrorResponse(error, webOrigin);
       }
@@ -589,7 +631,10 @@ async function resolveGoalAccess(
         userId: principal.userId,
         organizationId: principal.organizationId,
         readAll: action === "goals.read.all",
-        writeAll: action === "goals.write.all"
+        writeAll: action === "goals.write.all",
+        actor: { kind: "client", id: principal.tokenId, runId: null },
+        authentication: { kind: "api_token", subjectId: principal.tokenId },
+        clientInfo: null
       },
       session: false
     };
@@ -607,7 +652,10 @@ async function resolveGoalAccess(
       userId: session.user.id,
       organizationId: active.id,
       readAll: true,
-      writeAll: active.role === "owner" || active.role === "admin"
+      writeAll: active.role === "owner" || active.role === "admin",
+      actor: { kind: "user", id: session.user.id, runId: null },
+      authentication: { kind: "session", subjectId: session.id },
+      clientInfo: null
     },
     session: true
   };
@@ -767,12 +815,12 @@ function matchOrganizationMemberUpdate(request: Request): string | null {
   }
 }
 
-function matchResourceRoute(request: Request, prefix: string): string | null {
-  if (
-    request.method !== "GET" &&
-    request.method !== "PATCH" &&
-    request.method !== "DELETE"
-  ) {
+function matchResourceRoute(
+  request: Request,
+  prefix: string,
+  methods: readonly string[] = ["GET", "PATCH", "DELETE"]
+): string | null {
+  if (!methods.includes(request.method)) {
     return null;
   }
   const pathname = new URL(request.url).pathname;
@@ -781,6 +829,19 @@ function matchResourceRoute(request: Request, prefix: string): string | null {
   if (!encoded || encoded.includes("/")) return null;
   try {
     return decodeURIComponent(encoded);
+  } catch {
+    return null;
+  }
+}
+
+function matchGoalUpdatesRoute(request: Request): string | null {
+  if (request.method !== "GET" && request.method !== "POST") return null;
+  const match = new URL(request.url).pathname.match(
+    /^\/v1\/goals\/([^/]+)\/updates$/
+  );
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
   } catch {
     return null;
   }

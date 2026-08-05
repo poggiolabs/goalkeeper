@@ -1,10 +1,14 @@
 import type {
   Goal,
+  GoalActor,
+  GoalAuthentication,
+  GoalClientInfo,
   GoalCriterion,
   GoalLabel,
   GoalLabelRecord,
   GoalRecord,
   GoalRepository,
+  GoalStatusUpdateRecord,
   GoalStatus
 } from "./types";
 import { GoalRepositoryError, goalStatuses } from "./types";
@@ -32,6 +36,9 @@ export type GoalAccess = {
   organizationId: string;
   readAll: boolean;
   writeAll: boolean;
+  actor: GoalActor;
+  authentication: GoalAuthentication;
+  clientInfo: GoalClientInfo | null;
 };
 
 export function createGoalService(
@@ -85,10 +92,12 @@ export function createGoalService(
             status: "active",
             ownerUserId: input.ownerUserId,
             criteria: input.criteria,
-            createdBy: access.userId,
-            updatedBy: access.userId
+            revision: 1,
+            createdByUserId: access.userId,
+            updatedByUserId: access.userId
           },
-          input.labelIds
+          input.labelIds,
+          attributionFor(access)
         )
       );
       return { goal: toGoal(record) };
@@ -128,10 +137,9 @@ export function createGoalService(
             title: input.title ?? existing.title,
             detailedDescription:
               input.detailedDescription ?? existing.detailedDescription,
-            status: input.status ?? existing.status,
             ownerUserId,
             criteria: input.criteria ?? existing.criteria,
-            updatedBy: access.userId
+            updatedByUserId: access.userId
           },
           labelIds: input.labelIds
         })
@@ -140,14 +148,48 @@ export function createGoalService(
       return { goal: toGoal(record) };
     },
 
-    async deleteGoal(access: GoalAccess, goalId: string): Promise<void> {
-      const deleted = await repository.deleteGoal({
-        organizationId: access.organizationId,
-        goalId: normalizeId(goalId, "goal"),
-        actorUserId: access.userId,
-        allowAll: access.writeAll
-      });
-      if (!deleted) throw notFound("goal");
+    async listUpdates(access: GoalAccess, goalId: string) {
+      const existing = await repository.getGoal(
+        access.organizationId,
+        normalizeId(goalId, "goal")
+      );
+      if (!existing || (!access.readAll && existing.ownerUserId !== access.userId)) {
+        throw notFound("goal");
+      }
+      return {
+        updates: (
+          await repository.listUpdates({
+            organizationId: access.organizationId,
+            goalId: existing.id
+          })
+        ).map(toGoalUpdate)
+      };
+    },
+
+    async reportUpdate(access: GoalAccess, goalId: string, request: unknown) {
+      const input = normalizeGoalStatusUpdate(request);
+      const existing = await repository.getGoal(
+        access.organizationId,
+        normalizeId(goalId, "goal")
+      );
+      if (!existing || (!access.writeAll && existing.ownerUserId !== access.userId)) {
+        throw notFound("goal");
+      }
+      const update = await goalRepositoryOperation(() =>
+        repository.appendUpdate({
+          organizationId: access.organizationId,
+          goalId: existing.id,
+          actorUserId: access.userId,
+          allowAll: access.writeAll,
+          expectedRevision: input.expectedRevision,
+          status: input.status,
+          summary: input.summary,
+          details: input.details,
+          idempotencyKey: input.idempotencyKey,
+          attribution: attributionFor(access)
+        })
+      );
+      return { update: toGoalUpdate(update) };
     },
 
     async listLabels(access: GoalAccess): Promise<{ labels: GoalLabel[] }> {
@@ -176,8 +218,8 @@ export function createGoalService(
       const record = await repository.insertLabel({
         organizationId: access.organizationId,
         ...input,
-        createdBy: access.userId,
-        updatedBy: access.userId
+        createdByUserId: access.userId,
+        updatedByUserId: access.userId
       });
       if (!record) {
         throw new GoalError(
@@ -207,7 +249,7 @@ export function createGoalService(
           input.description === undefined
             ? existing.description
             : input.description,
-        updatedBy: access.userId
+        updatedByUserId: access.userId
       });
       if (record === "conflict") {
         throw new GoalError(
@@ -285,7 +327,6 @@ function normalizeGoalUpdate(request: unknown) {
   const candidate = objectWithKeys(request, [
     "title",
     "detailedDescription",
-    "status",
     "ownerUserId",
     "labelIds",
     "criteria"
@@ -305,8 +346,6 @@ function normalizeGoalUpdate(request: unknown) {
             candidate.detailedDescription,
             "goal detailed description"
           ),
-    status:
-      candidate.status === undefined ? undefined : goalStatus(candidate.status),
     ownerUserId:
       candidate.ownerUserId === undefined
         ? undefined
@@ -317,6 +356,30 @@ function normalizeGoalUpdate(request: unknown) {
       candidate.criteria === undefined
         ? undefined
         : goalCriteria(candidate.criteria)
+  };
+}
+
+function normalizeGoalStatusUpdate(request: unknown) {
+  const candidate = objectWithKeys(request, [
+    "status",
+    "summary",
+    "details",
+    "expectedRevision",
+    "idempotencyKey"
+  ]);
+  return {
+    status: goalStatus(candidate.status),
+    summary: requiredString(candidate.summary, "update summary", 500),
+    details: requiredLongText(candidate.details, "update details"),
+    expectedRevision: positiveInteger(
+      candidate.expectedRevision,
+      "expected revision"
+    ),
+    idempotencyKey: requiredString(
+      candidate.idempotencyKey,
+      "idempotency key",
+      200
+    )
   };
 }
 
@@ -476,6 +539,16 @@ function invalidCriterion(index: number, message: string): GoalError {
   );
 }
 
+function positiveInteger(value: unknown, field: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    throw new GoalError(
+      "invalid_goal_request",
+      `${field} must be a positive integer`
+    );
+  }
+  return value as number;
+}
+
 function labelIds(value: unknown): string[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > maximumLabelsPerGoal) {
@@ -526,8 +599,37 @@ async function goalRepositoryOperation<T>(operation: () => Promise<T>): Promise<
         "Every label must belong to the active organization"
       );
     }
+    if (error instanceof GoalRepositoryError && error.code === "goal_not_found") {
+      throw notFound("goal");
+    }
+    if (error instanceof GoalRepositoryError && error.code === "revision_conflict") {
+      throw new GoalError(
+        "goal_revision_conflict",
+        "The goal changed after the reported revision",
+        409
+      );
+    }
+    if (
+      error instanceof GoalRepositoryError &&
+      error.code === "idempotency_conflict"
+    ) {
+      throw new GoalError(
+        "goal_update_idempotency_conflict",
+        "The idempotency key was already used for a different update",
+        409
+      );
+    }
     throw error;
   }
+}
+
+function attributionFor(access: GoalAccess) {
+  return {
+    authorityUserId: access.userId,
+    actor: access.actor,
+    authentication: access.authentication,
+    clientInfo: access.clientInfo
+  };
 }
 
 function generateGoalTitle(detailedDescription: string): string {
@@ -556,5 +658,12 @@ function toLabel(record: GoalLabelRecord): GoalLabel {
     ...record,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString()
+  };
+}
+
+function toGoalUpdate(record: GoalStatusUpdateRecord) {
+  return {
+    ...record,
+    createdAt: record.createdAt.toISOString()
   };
 }

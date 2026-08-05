@@ -10,7 +10,7 @@ export const apiTokenScopeRegistry = [
     id: "goals:write",
     label: "Write my goals",
     description:
-      "Create, update, and delete goals owned by the token owner and manage organization goal labels.",
+      "Create goals, update metadata, report status, and manage organization goal labels for goals owned by the token owner.",
     default: false,
     capabilities: ["goals.write.own"]
   },
@@ -26,7 +26,7 @@ export const apiTokenScopeRegistry = [
     id: "goals:write:all",
     label: "Write all goals",
     description:
-      "Create, update, and delete every goal writable by the token owner and manage organization goal labels.",
+      "Create goals, update metadata, report status, and manage organization goal labels for every goal writable by the token owner.",
     default: false,
     capabilities: ["goals.write.own", "goals.write.all"]
   }

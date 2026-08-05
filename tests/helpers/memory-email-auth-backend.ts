@@ -14,7 +14,7 @@ type TestUser = AuthSession["user"] & {
 export class MemoryEmailAuthBackend implements EmailAuthBackend {
   readonly method = "email";
   readonly users = new Map<string, TestUser>();
-  readonly sessions = new Map<string, string>();
+  readonly sessions = new Map<string, { id: string; email: string }>();
   readonly verificationTokens = new Map<string, string>();
 
   constructor(private readonly webOrigin: string) {}
@@ -46,10 +46,11 @@ export class MemoryEmailAuthBackend implements EmailAuthBackend {
 
   async getSession(request: Request): Promise<AuthSession | null> {
     const secret = request.headers.get("cookie")?.match(/test_session=([^;]+)/)?.[1];
-    const email = secret ? this.sessions.get(secret) : undefined;
-    const user = email ? this.users.get(email) : undefined;
+    const session = secret ? this.sessions.get(secret) : undefined;
+    const user = session ? this.users.get(session.email) : undefined;
     return user?.emailVerified
       ? {
+          id: session!.id,
           user: {
             id: user.id,
             email: user.email,
@@ -88,7 +89,7 @@ export class MemoryEmailAuthBackend implements EmailAuthBackend {
       throw new AuthError("invalid_credentials", "Invalid email or password", 401);
     }
     const secret = crypto.randomUUID();
-    this.sessions.set(secret, user.email);
+    this.sessions.set(secret, { id: crypto.randomUUID(), email: user.email });
     return {
       redirectTo: request.returnTo,
       headers: {

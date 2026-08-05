@@ -554,6 +554,130 @@ export async function migrateApiDatabase(sql: SQL): Promise<void> {
         values ('008_goal_fields')
       `;
     }
+
+    const goalUpdatesApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '009_goal_updates'
+    `;
+    if (goalUpdatesApplied.length === 0) {
+      await transaction`
+        create type goal_actor_kind as enum ('user', 'client', 'agent')
+      `;
+      await transaction`
+        create type goal_authn_kind as enum (
+          'session',
+          'api_token',
+          'oauth',
+          'unknown'
+        )
+      `;
+      await transaction`
+        alter table goal_labels
+        rename column created_by to created_by_user_id
+      `;
+      await transaction`
+        alter table goal_labels
+        rename column updated_by to updated_by_user_id
+      `;
+      await transaction`
+        alter table goals
+        rename column created_by to created_by_user_id
+      `;
+      await transaction`
+        alter table goals
+        rename column updated_by to updated_by_user_id
+      `;
+      await transaction`
+        alter table goals
+          add column revision bigint not null default 1,
+          add constraint goals_revision_check check (revision >= 1),
+          add constraint goals_organization_id_id_key
+            unique (organization_id, id)
+      `;
+      await transaction`
+        create table goal_updates (
+          id uuid primary key default gen_random_uuid(),
+          organization_id uuid not null,
+          goal_id uuid not null,
+          revision bigint not null,
+          status goal_status not null,
+          summary text not null,
+          details text not null,
+          authority_user_id text not null,
+          actor_kind goal_actor_kind not null,
+          actor_id text not null,
+          actor_run_id text,
+          authn_kind goal_authn_kind not null,
+          authn_subject_id text,
+          client_name text,
+          client_version text,
+          idempotency_key text not null,
+          created_at timestamptz not null default now(),
+          constraint goal_updates_goal_fk
+            foreign key (organization_id, goal_id)
+            references goals (organization_id, id),
+          constraint goal_updates_revision_check check (revision >= 1),
+          constraint goal_updates_summary_length_check
+            check (char_length(summary) between 1 and 500),
+          constraint goal_updates_details_check
+            check (char_length(details) >= 1),
+          constraint goal_updates_actor_id_check
+            check (char_length(actor_id) between 1 and 200),
+          constraint goal_updates_actor_run_check
+            check (actor_run_id is null or actor_kind = 'agent'),
+          constraint goal_updates_authn_subject_check
+            check (
+              (authn_kind = 'unknown' and authn_subject_id is null)
+              or (authn_kind <> 'unknown' and authn_subject_id is not null)
+            ),
+          constraint goal_updates_client_info_check
+            check (
+              (client_name is null and client_version is null)
+              or (
+                char_length(client_name) between 1 and 200
+                and char_length(client_version) between 1 and 100
+              )
+            ),
+          constraint goal_updates_idempotency_key_check
+            check (char_length(idempotency_key) between 1 and 200),
+          unique (goal_id, revision),
+          unique (goal_id, idempotency_key)
+        )
+      `;
+      await transaction`
+        insert into goal_updates (
+          organization_id,
+          goal_id,
+          revision,
+          status,
+          summary,
+          details,
+          authority_user_id,
+          actor_kind,
+          actor_id,
+          authn_kind,
+          idempotency_key,
+          created_at
+        )
+        select
+          organization_id,
+          id,
+          1,
+          status,
+          'Goal created',
+          'Initial goal state.',
+          created_by_user_id,
+          'user'::goal_actor_kind,
+          created_by_user_id,
+          'unknown'::goal_authn_kind,
+          'goal-created',
+          created_at
+        from goals
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('009_goal_updates')
+      `;
+    }
   });
 }
 

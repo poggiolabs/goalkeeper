@@ -5,6 +5,7 @@ export type AuthUser = {
 };
 
 export type AuthSession = {
+  id: string;
   user: AuthUser;
 };
 

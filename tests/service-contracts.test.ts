@@ -175,6 +175,41 @@ describe("goal REST contract", () => {
       })
     );
     expect(tokenCreate.status).toBe(201);
+
+    const updateResponse = await handleApiRequest(
+      new Request(
+        `http://localhost/v1/goals/${goal.id}/updates`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${writeToken.secret}`,
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            status: "completed",
+            summary: "Launch complete",
+            details: "The durable goals API is available.",
+            expectedRevision: 1,
+            idempotencyKey: "launch-complete"
+          })
+        }
+      )
+    );
+    expect(updateResponse.status).toBe(201);
+    expect(await updateResponse.json()).toMatchObject({
+      update: {
+        goalId: goal.id,
+        revision: 2,
+        status: "completed",
+        authorityUserId: user.id,
+        actor: { kind: "client", id: writeToken.token.id, runId: null },
+        authentication: {
+          kind: "api_token",
+          subjectId: writeToken.token.id
+        },
+        clientInfo: null
+      }
+    });
   });
 
   test("fails closed for invalid bearer credentials and browser CSRF", async () => {
@@ -206,7 +241,12 @@ describe("goal REST contract", () => {
     expect(apiOpenApiDocument.paths[apiRoutes.goalsCreate.path].post).toBeDefined();
     expect(apiOpenApiDocument.paths[apiRoutes.goalGet.path].get).toBeDefined();
     expect(apiOpenApiDocument.paths[apiRoutes.goalUpdate.path].patch).toBeDefined();
-    expect(apiOpenApiDocument.paths[apiRoutes.goalDelete.path].delete).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.goalUpdatesList.path].get
+    ).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.goalUpdatesCreate.path].post
+    ).toBeDefined();
     expect(apiOpenApiDocument.paths[apiRoutes.goalLabelsList.path].get).toBeDefined();
     expect(apiOpenApiDocument.paths[apiRoutes.goalLabelsCreate.path].post).toBeDefined();
     expect(apiOpenApiDocument.paths[apiRoutes.goalLabelGet.path].get).toBeDefined();

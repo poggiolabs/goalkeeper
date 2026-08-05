@@ -2,7 +2,10 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { SQL } from "bun";
 import { migrateApiDatabase } from "../services/api/src/api-tokens/postgres";
 import { createPostgresGoalRepository } from "../services/api/src/goals/postgres";
-import { createGoalService } from "../services/api/src/goals/service";
+import {
+  createGoalService,
+  type GoalAccess
+} from "../services/api/src/goals/service";
 import { createPostgresOrganizationRepository } from "../services/api/src/organizations/postgres";
 import { createOrganizationService } from "../services/api/src/organizations/service";
 
@@ -44,11 +47,14 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
       email: "goal-owner@example.com"
     };
     const context = await organizations.ensureForUser(owner);
-    const access = {
+    const access: GoalAccess = {
       userId: owner.id,
       organizationId: context.activeOrganizationId,
       readAll: true,
-      writeAll: true
+      writeAll: true,
+      actor: { kind: "user", id: owner.id, runId: null },
+      authentication: { kind: "session", subjectId: crypto.randomUUID() },
+      clientInfo: null
     };
     const { label } = await goals.createLabel(access, {
       name: "Launch",
@@ -65,7 +71,6 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
     });
 
     const updated = await goals.updateGoal(access, goal.id, {
-      status: "completed",
       criteria: [
         {
           title: "Database checks",
@@ -74,7 +79,7 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
       ]
     });
     expect(updated.goal).toMatchObject({
-      status: "completed",
+      status: "active",
       criteria: [
         {
           title: "Database checks",
@@ -82,6 +87,24 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
         }
       ]
     });
+    const { update } = await goals.reportUpdate(access, goal.id, {
+      status: "completed",
+      summary: "Database contract complete",
+      details: "The goal and label persistence checks pass.",
+      expectedRevision: 1,
+      idempotencyKey: "database-contract-complete"
+    });
+    expect(update).toMatchObject({
+      revision: 2,
+      status: "completed",
+      authorityUserId: owner.id,
+      actor: { kind: "user", id: owner.id, runId: null },
+      authentication: {
+        kind: "session",
+        subjectId: access.authentication.subjectId
+      }
+    });
+    expect((await goals.listUpdates(access, goal.id)).updates).toHaveLength(2);
     const [statusColumn] = await database<
       { data_type: string; udt_name: string }[]
     >`
@@ -98,10 +121,17 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
     await expect(goals.deleteLabel(access, label.id)).rejects.toMatchObject({
       code: "goal_label_in_use"
     });
-    await goals.deleteGoal(access, goal.id);
+    await goals.updateGoal(access, goal.id, { labelIds: [] });
     await goals.deleteLabel(access, label.id);
-    await expect(goals.getGoal(access, goal.id)).rejects.toMatchObject({
-      code: "goal_not_found"
+    await goals.reportUpdate(access, goal.id, {
+      status: "archived",
+      summary: "Goal archived",
+      details: "The historical record remains available.",
+      expectedRevision: 2,
+      idempotencyKey: "archive-completed-goal"
+    });
+    await expect(goals.getGoal(access, goal.id)).resolves.toMatchObject({
+      goal: { status: "archived", revision: 3 }
     });
   });
 
@@ -118,17 +148,23 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
     };
     const first = await organizations.ensureForUser(firstUser);
     const second = await organizations.ensureForUser(secondUser);
-    const firstAccess = {
+    const firstAccess: GoalAccess = {
       userId: firstUser.id,
       organizationId: first.activeOrganizationId,
       readAll: true,
-      writeAll: true
+      writeAll: true,
+      actor: { kind: "user", id: firstUser.id, runId: null },
+      authentication: { kind: "session", subjectId: crypto.randomUUID() },
+      clientInfo: null
     };
-    const secondAccess = {
+    const secondAccess: GoalAccess = {
       userId: secondUser.id,
       organizationId: second.activeOrganizationId,
       readAll: true,
-      writeAll: true
+      writeAll: true,
+      actor: { kind: "user", id: secondUser.id, runId: null },
+      authentication: { kind: "session", subjectId: crypto.randomUUID() },
+      clientInfo: null
     };
     await goals.createLabel(firstAccess, { name: "Customer" });
     await expect(

@@ -91,9 +91,13 @@ export const apiRoutes = {
     method: "PATCH",
     path: "/v1/goals/{goalId}"
   },
-  goalDelete: {
-    method: "DELETE",
-    path: "/v1/goals/{goalId}"
+  goalUpdatesList: {
+    method: "GET",
+    path: "/v1/goals/{goalId}/updates"
+  },
+  goalUpdatesCreate: {
+    method: "POST",
+    path: "/v1/goals/{goalId}/updates"
   },
   goalLabelsList: {
     method: "GET",

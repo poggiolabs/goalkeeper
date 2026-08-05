@@ -1,7 +1,13 @@
 export const goalStatuses = ["active", "completed", "paused", "archived"] as const;
 
 export class GoalRepositoryError extends Error {
-  constructor(readonly code: "invalid_labels") {
+  constructor(
+    readonly code:
+      | "invalid_labels"
+      | "goal_not_found"
+      | "revision_conflict"
+      | "idempotency_conflict"
+  ) {
     super(code);
     this.name = "GoalRepositoryError";
   }
@@ -14,6 +20,28 @@ export type GoalCriterion = {
   description: string;
 };
 
+export type GoalActor =
+  | { kind: "user"; id: string; runId: null }
+  | { kind: "client"; id: string; runId: null }
+  | { kind: "agent"; id: string; runId: string | null };
+
+export type GoalAuthentication = {
+  kind: "session" | "api_token" | "oauth" | "unknown";
+  subjectId: string | null;
+};
+
+export type GoalClientInfo = {
+  name: string;
+  version: string;
+};
+
+export type GoalAttribution = {
+  authorityUserId: string;
+  actor: GoalActor;
+  authentication: GoalAuthentication;
+  clientInfo: GoalClientInfo | null;
+};
+
 export type GoalLabel = {
   id: string;
   organizationId: string;
@@ -21,9 +49,9 @@ export type GoalLabel = {
   color: string | null;
   description: string | null;
   createdAt: string;
-  createdBy: string;
+  createdByUserId: string;
   updatedAt: string;
-  updatedBy: string;
+  updatedByUserId: string;
 };
 
 export type Goal = {
@@ -35,10 +63,23 @@ export type Goal = {
   ownerUserId: string;
   labels: GoalLabel[];
   criteria: GoalCriterion[];
+  revision: number;
   createdAt: string;
-  createdBy: string;
+  createdByUserId: string;
   updatedAt: string;
-  updatedBy: string;
+  updatedByUserId: string;
+};
+
+export type GoalUpdate = GoalAttribution & {
+  id: string;
+  organizationId: string;
+  goalId: string;
+  revision: number;
+  status: GoalStatus;
+  summary: string;
+  details: string;
+  idempotencyKey: string;
+  createdAt: string;
 };
 
 export type GoalLabelRecord = Omit<
@@ -72,11 +113,14 @@ export type GoalUpdateRecord = Pick<
   GoalRecord,
   | "title"
   | "detailedDescription"
-  | "status"
   | "ownerUserId"
   | "criteria"
-  | "updatedBy"
+  | "updatedByUserId"
 >;
+
+export type GoalStatusUpdateRecord = Omit<GoalUpdate, "createdAt"> & {
+  createdAt: Date;
+};
 
 export interface GoalRepository {
   listGoals(input: {
@@ -86,7 +130,11 @@ export interface GoalRepository {
     labelId: string | null;
   }): Promise<GoalRecord[]>;
   getGoal(organizationId: string, goalId: string): Promise<GoalRecord | null>;
-  insertGoal(record: NewGoalRecord, labelIds: string[]): Promise<GoalRecord>;
+  insertGoal(
+    record: NewGoalRecord,
+    labelIds: string[],
+    attribution: GoalAttribution
+  ): Promise<GoalRecord>;
   updateGoal(input: {
     organizationId: string;
     goalId: string;
@@ -95,12 +143,22 @@ export interface GoalRepository {
     update: GoalUpdateRecord;
     labelIds: string[] | null;
   }): Promise<GoalRecord | null>;
-  deleteGoal(input: {
+  listUpdates(input: {
+    organizationId: string;
+    goalId: string;
+  }): Promise<GoalStatusUpdateRecord[]>;
+  appendUpdate(input: {
     organizationId: string;
     goalId: string;
     actorUserId: string;
     allowAll: boolean;
-  }): Promise<boolean>;
+    expectedRevision: number;
+    status: GoalStatus;
+    summary: string;
+    details: string;
+    idempotencyKey: string;
+    attribution: GoalAttribution;
+  }): Promise<GoalStatusUpdateRecord>;
   listLabels(organizationId: string): Promise<GoalLabelRecord[]>;
   getLabel(
     organizationId: string,
@@ -113,7 +171,7 @@ export interface GoalRepository {
     name: string;
     color: string | null;
     description: string | null;
-    updatedBy: string;
+    updatedByUserId: string;
   }): Promise<GoalLabelRecord | "conflict" | null>;
   deleteLabel(
     organizationId: string,

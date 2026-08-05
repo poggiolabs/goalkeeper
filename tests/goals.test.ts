@@ -22,7 +22,10 @@ function createHarness() {
     userId: "user-1",
     organizationId,
     readAll: false,
-    writeAll: false
+    writeAll: false,
+    actor: { kind: "user", id: "user-1", runId: null },
+    authentication: { kind: "session", subjectId: "session-1" },
+    clientInfo: null
   };
   const all: GoalAccess = { ...own, readAll: true, writeAll: true };
   return { repository, service, own, all };
@@ -60,8 +63,24 @@ describe("goals and labels", () => {
           title: "Contract passes",
           description: "The public CRUD contract passes its tests."
         }
-      ]
+      ],
+      revision: 1,
+      createdByUserId: "user-1",
+      updatedByUserId: "user-1"
     });
+
+    expect((await service.listUpdates(own, goal.id)).updates).toMatchObject([
+      {
+        goalId: goal.id,
+        revision: 1,
+        status: "active",
+        summary: "Goal created",
+        authorityUserId: "user-1",
+        actor: { kind: "user", id: "user-1", runId: null },
+        authentication: { kind: "session", subjectId: "session-1" },
+        clientInfo: null
+      }
+    ]);
 
     const renamed = await service.updateLabel(own, label.id, {
       name: "Next",
@@ -110,7 +129,13 @@ describe("goals and labels", () => {
     await service.createGoal(all, {
       detailedDescription: "Reduce support latency"
     });
-    await service.updateGoal(all, first.goal.id, { status: "paused" });
+    await service.reportUpdate(all, first.goal.id, {
+      status: "paused",
+      summary: "Waiting on a dependency",
+      details: "The external dependency is not yet available.",
+      expectedRevision: 1,
+      idempotencyKey: "pause-for-dependency"
+    });
 
     expect(
       (
@@ -154,6 +179,9 @@ describe("goals and labels", () => {
     await expect(service.updateGoal(all, goal.id, {})).rejects.toMatchObject({
       code: "empty_goal_update"
     });
+    await expect(
+      service.updateGoal(all, goal.id, { status: "completed" })
+    ).rejects.toMatchObject({ code: "invalid_goal_request" });
     await service.createLabel(all, { name: "Customer" });
     await expect(
       service.createLabel(all, { name: "customer" })
@@ -174,5 +202,78 @@ describe("goals and labels", () => {
         criteria: [{ title: "Valid", description: "Valid", score: 1 }]
       })
     ).rejects.toMatchObject({ code: "invalid_goal_criteria" });
+  });
+
+  test("appends status updates with optimistic concurrency and idempotency", async () => {
+    const { service, all } = createHarness();
+    const { goal } = await service.createGoal(all, {
+      detailedDescription: "Produce a durable result"
+    });
+    const request = {
+      status: "completed",
+      summary: "Result delivered",
+      details: "The final artifact passed validation.",
+      expectedRevision: 1,
+      idempotencyKey: "run-42-completed"
+    } as const;
+
+    const first = await service.reportUpdate(all, goal.id, request);
+    const retry = await service.reportUpdate(all, goal.id, request);
+    expect(retry).toEqual(first);
+    expect(first.update).toMatchObject({
+      revision: 2,
+      status: "completed",
+      authorityUserId: "user-1",
+      actor: { kind: "user", id: "user-1", runId: null },
+      authentication: { kind: "session", subjectId: "session-1" }
+    });
+    expect((await service.getGoal(all, goal.id)).goal).toMatchObject({
+      status: "completed",
+      revision: 2
+    });
+    expect((await service.listUpdates(all, goal.id)).updates).toHaveLength(2);
+
+    await expect(
+      service.reportUpdate(all, goal.id, {
+        ...request,
+        idempotencyKey: "stale-update"
+      })
+    ).rejects.toMatchObject({ code: "goal_revision_conflict", status: 409 });
+    await expect(
+      service.reportUpdate(all, goal.id, {
+        ...request,
+        summary: "Different payload"
+      })
+    ).rejects.toMatchObject({
+      code: "goal_update_idempotency_conflict",
+      status: 409
+    });
+  });
+
+  test("attributes an agent separately from the authorizing human", async () => {
+    const { service, all } = createHarness();
+    const agentAccess: GoalAccess = {
+      ...all,
+      actor: { kind: "agent", id: "research-agent", runId: "run-42" },
+      authentication: { kind: "oauth", subjectId: "oauth-client-1" },
+      clientInfo: { name: "Claude Desktop", version: "1.2.3" }
+    };
+    const { goal } = await service.createGoal(agentAccess, {
+      detailedDescription: "Research the target market"
+    });
+    const { update } = await service.reportUpdate(agentAccess, goal.id, {
+      status: "active",
+      summary: "Interview synthesis complete",
+      details: "Three recurring customer needs were identified.",
+      expectedRevision: 1,
+      idempotencyKey: "run-42-synthesis"
+    });
+
+    expect(update).toMatchObject({
+      authorityUserId: "user-1",
+      actor: { kind: "agent", id: "research-agent", runId: "run-42" },
+      authentication: { kind: "oauth", subjectId: "oauth-client-1" },
+      clientInfo: { name: "Claude Desktop", version: "1.2.3" }
+    });
   });
 });

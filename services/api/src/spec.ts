@@ -802,7 +802,9 @@ export const apiOpenApiDocument = {
       },
       patch: {
         operationId: "updateGoal",
-        summary: "Update a goal",
+        summary: "Update goal metadata",
+        description:
+          "Updates descriptive metadata. Report a goal update to change lifecycle status.",
         tags: ["Goals"],
         security: goalSecurity,
         parameters: [
@@ -832,10 +834,14 @@ export const apiOpenApiDocument = {
           },
           ...goalErrorResponses
         }
-      },
-      delete: {
-        operationId: "deleteGoal",
-        summary: "Delete a goal",
+      }
+    },
+    [apiRoutes.goalUpdatesList.path]: {
+      get: {
+        operationId: "listGoalUpdates",
+        summary: "List goal updates",
+        description:
+          "Returns the append-only status history for a goal in revision order.",
         tags: ["Goals"],
         security: goalSecurity,
         parameters: [
@@ -847,7 +853,49 @@ export const apiOpenApiDocument = {
           }
         ],
         responses: {
-          "204": { description: "The goal was deleted." },
+          "200": {
+            description: "The goal's status history.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ListGoalUpdatesResponse" }
+              }
+            }
+          },
+          ...goalErrorResponses
+        }
+      },
+      post: {
+        operationId: "createGoalUpdate",
+        summary: "Report a goal update",
+        description:
+          "Appends a status report and advances the goal's current status and revision atomically.",
+        tags: ["Goals"],
+        security: goalSecurity,
+        parameters: [
+          {
+            name: "goalId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateGoalUpdateRequest" }
+            }
+          }
+        },
+        responses: {
+          "201": {
+            description: "The appended goal update.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/GoalUpdateResponse" }
+              }
+            }
+          },
           ...goalErrorResponses
         }
       }
@@ -1143,9 +1191,9 @@ export const apiOpenApiDocument = {
           "color",
           "description",
           "createdAt",
-          "createdBy",
+          "createdByUserId",
           "updatedAt",
-          "updatedBy"
+          "updatedByUserId"
         ],
         properties: {
           id: { type: "string", format: "uuid" },
@@ -1158,9 +1206,9 @@ export const apiOpenApiDocument = {
             maxLength: 500
           },
           createdAt: { type: "string", format: "date-time" },
-          createdBy: { type: "string", minLength: 1 },
+          createdByUserId: { type: "string", minLength: 1 },
           updatedAt: { type: "string", format: "date-time" },
-          updatedBy: { type: "string", minLength: 1 }
+          updatedByUserId: { type: "string", minLength: 1 }
         }
       },
       Goal: {
@@ -1175,10 +1223,11 @@ export const apiOpenApiDocument = {
           "ownerUserId",
           "labels",
           "criteria",
+          "revision",
           "createdAt",
-          "createdBy",
+          "createdByUserId",
           "updatedAt",
-          "updatedBy"
+          "updatedByUserId"
         ],
         properties: {
           id: { type: "string", format: "uuid" },
@@ -1201,10 +1250,11 @@ export const apiOpenApiDocument = {
             maxItems: 100,
             items: { $ref: "#/components/schemas/GoalCriterion" }
           },
+          revision: { type: "integer", minimum: 1 },
           createdAt: { type: "string", format: "date-time" },
-          createdBy: { type: "string", minLength: 1 },
+          createdByUserId: { type: "string", minLength: 1 },
           updatedAt: { type: "string", format: "date-time" },
-          updatedBy: { type: "string", minLength: 1 }
+          updatedByUserId: { type: "string", minLength: 1 }
         }
       },
       GoalResponse: {
@@ -1260,7 +1310,6 @@ export const apiOpenApiDocument = {
             minLength: 1,
             description: "A long-form description that may contain Markdown."
           },
-          status: { $ref: "#/components/schemas/GoalStatus" },
           ownerUserId: { type: "string", minLength: 1, maxLength: 200 },
           labelIds: {
             type: "array",
@@ -1273,6 +1322,141 @@ export const apiOpenApiDocument = {
             maxItems: 100,
             items: { $ref: "#/components/schemas/GoalCriterion" }
           }
+        }
+      },
+      GoalActor: {
+        oneOf: [
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["kind", "id", "runId"],
+            properties: {
+              kind: { const: "user" },
+              id: { type: "string", minLength: 1, maxLength: 200 },
+              runId: { type: "null" }
+            }
+          },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["kind", "id", "runId"],
+            properties: {
+              kind: { const: "client" },
+              id: { type: "string", minLength: 1, maxLength: 200 },
+              runId: { type: "null" }
+            }
+          },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["kind", "id", "runId"],
+            properties: {
+              kind: { const: "agent" },
+              id: { type: "string", minLength: 1, maxLength: 200 },
+              runId: { type: ["string", "null"], minLength: 1, maxLength: 200 }
+            }
+          }
+        ]
+      },
+      GoalAuthentication: {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "subjectId"],
+        properties: {
+          kind: {
+            type: "string",
+            enum: ["session", "api_token", "oauth", "unknown"]
+          },
+          subjectId: { type: ["string", "null"], minLength: 1 }
+        }
+      },
+      GoalClientInfo: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "version"],
+        properties: {
+          name: { type: "string", minLength: 1, maxLength: 200 },
+          version: { type: "string", minLength: 1, maxLength: 100 }
+        }
+      },
+      GoalUpdate: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "id",
+          "organizationId",
+          "goalId",
+          "revision",
+          "status",
+          "summary",
+          "details",
+          "authorityUserId",
+          "actor",
+          "authentication",
+          "clientInfo",
+          "idempotencyKey",
+          "createdAt"
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          organizationId: { type: "string", format: "uuid" },
+          goalId: { type: "string", format: "uuid" },
+          revision: { type: "integer", minimum: 1 },
+          status: { $ref: "#/components/schemas/GoalStatus" },
+          summary: { type: "string", minLength: 1, maxLength: 500 },
+          details: {
+            type: "string",
+            minLength: 1,
+            description: "A long-form status report that may contain Markdown."
+          },
+          authorityUserId: { type: "string", minLength: 1 },
+          actor: { $ref: "#/components/schemas/GoalActor" },
+          authentication: {
+            $ref: "#/components/schemas/GoalAuthentication"
+          },
+          clientInfo: {
+            anyOf: [
+              { $ref: "#/components/schemas/GoalClientInfo" },
+              { type: "null" }
+            ]
+          },
+          idempotencyKey: { type: "string", minLength: 1, maxLength: 200 },
+          createdAt: { type: "string", format: "date-time" }
+        }
+      },
+      GoalUpdateResponse: {
+        type: "object",
+        additionalProperties: false,
+        required: ["update"],
+        properties: { update: { $ref: "#/components/schemas/GoalUpdate" } }
+      },
+      ListGoalUpdatesResponse: {
+        type: "object",
+        additionalProperties: false,
+        required: ["updates"],
+        properties: {
+          updates: {
+            type: "array",
+            items: { $ref: "#/components/schemas/GoalUpdate" }
+          }
+        }
+      },
+      CreateGoalUpdateRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "status",
+          "summary",
+          "details",
+          "expectedRevision",
+          "idempotencyKey"
+        ],
+        properties: {
+          status: { $ref: "#/components/schemas/GoalStatus" },
+          summary: { type: "string", minLength: 1, maxLength: 500 },
+          details: { type: "string", minLength: 1 },
+          expectedRevision: { type: "integer", minimum: 1 },
+          idempotencyKey: { type: "string", minLength: 1, maxLength: 200 }
         }
       },
       GoalLabelResponse: {

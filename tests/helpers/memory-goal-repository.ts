@@ -2,6 +2,7 @@ import type {
   GoalLabelRecord,
   GoalRecord,
   GoalRepository,
+  GoalStatusUpdateRecord,
   NewGoalLabelRecord,
   NewGoalRecord
 } from "../../services/api/src/goals/types";
@@ -10,6 +11,7 @@ import { GoalRepositoryError } from "../../services/api/src/goals/types";
 export class MemoryGoalRepository implements GoalRepository {
   readonly goals: GoalRecord[] = [];
   readonly labels: GoalLabelRecord[] = [];
+  readonly updates: GoalStatusUpdateRecord[] = [];
   private tick = 0;
 
   async listGoals({ organizationId, ownerUserId, status, labelId }: Parameters<
@@ -40,7 +42,8 @@ export class MemoryGoalRepository implements GoalRepository {
 
   async insertGoal(
     record: NewGoalRecord,
-    labelIds: string[]
+    labelIds: string[],
+    attribution: Parameters<GoalRepository["insertGoal"]>[2]
   ): Promise<GoalRecord> {
     const labels = this.resolveLabels(record.organizationId, labelIds);
     const now = this.now();
@@ -52,6 +55,18 @@ export class MemoryGoalRepository implements GoalRepository {
       updatedAt: now
     };
     this.goals.push(goal);
+    this.updates.push({
+      id: crypto.randomUUID(),
+      organizationId: record.organizationId,
+      goalId: goal.id,
+      revision: 1,
+      status: record.status,
+      summary: "Goal created",
+      details: "Initial goal state.",
+      ...copyAttribution(attribution),
+      idempotencyKey: "goal-created",
+      createdAt: now
+    });
     return copyGoal(goal);
   }
 
@@ -77,21 +92,61 @@ export class MemoryGoalRepository implements GoalRepository {
     return copyGoal(goal);
   }
 
-  async deleteGoal({
+  async listUpdates({
     organizationId,
-    goalId,
-    actorUserId,
-    allowAll
-  }: Parameters<GoalRepository["deleteGoal"]>[0]): Promise<boolean> {
-    const index = this.goals.findIndex(
-      (goal) =>
-        goal.organizationId === organizationId &&
-        goal.id === goalId &&
-        (allowAll || goal.ownerUserId === actorUserId)
+    goalId
+  }: Parameters<GoalRepository["listUpdates"]>[0]): Promise<
+    GoalStatusUpdateRecord[]
+  > {
+    return this.updates
+      .filter(
+        (update) =>
+          update.organizationId === organizationId && update.goalId === goalId
+      )
+      .sort((left, right) => left.revision - right.revision)
+      .map(copyUpdate);
+  }
+
+  async appendUpdate(
+    input: Parameters<GoalRepository["appendUpdate"]>[0]
+  ): Promise<GoalStatusUpdateRecord> {
+    const goal = this.goals.find(
+      (candidate) =>
+        candidate.organizationId === input.organizationId &&
+        candidate.id === input.goalId &&
+        (input.allowAll || candidate.ownerUserId === input.actorUserId)
     );
-    if (index < 0) return false;
-    this.goals.splice(index, 1);
-    return true;
+    if (!goal) throw new GoalRepositoryError("goal_not_found");
+    const existing = this.updates.find(
+      (update) =>
+        update.goalId === input.goalId &&
+        update.idempotencyKey === input.idempotencyKey
+    );
+    if (existing) {
+      if (matchesUpdate(existing, input)) return copyUpdate(existing);
+      throw new GoalRepositoryError("idempotency_conflict");
+    }
+    if (goal.revision !== input.expectedRevision) {
+      throw new GoalRepositoryError("revision_conflict");
+    }
+    const update: GoalStatusUpdateRecord = {
+      id: crypto.randomUUID(),
+      organizationId: input.organizationId,
+      goalId: input.goalId,
+      revision: goal.revision + 1,
+      status: input.status,
+      summary: input.summary,
+      details: input.details,
+      ...copyAttribution(input.attribution),
+      idempotencyKey: input.idempotencyKey,
+      createdAt: this.now()
+    };
+    goal.status = input.status;
+    goal.revision = update.revision;
+    goal.updatedByUserId = input.attribution.authorityUserId;
+    goal.updatedAt = update.createdAt;
+    this.updates.push(update);
+    return copyUpdate(update);
   }
 
   async listLabels(organizationId: string): Promise<GoalLabelRecord[]> {
@@ -133,7 +188,7 @@ export class MemoryGoalRepository implements GoalRepository {
     name,
     color,
     description,
-    updatedBy
+    updatedByUserId
   }: Parameters<GoalRepository["updateLabel"]>[0]): Promise<
     GoalLabelRecord | "conflict" | null
   > {
@@ -147,7 +202,7 @@ export class MemoryGoalRepository implements GoalRepository {
       name,
       color,
       description,
-      updatedBy,
+      updatedByUserId,
       updatedAt: this.now()
     });
     for (const goal of this.goals) {
@@ -216,4 +271,44 @@ function copyGoal(goal: GoalRecord): GoalRecord {
 
 function copyLabel(label: GoalLabelRecord): GoalLabelRecord {
   return { ...label };
+}
+
+function copyAttribution<T extends Parameters<GoalRepository["insertGoal"]>[2]>(
+  attribution: T
+) {
+  return {
+    authorityUserId: attribution.authorityUserId,
+    actor: { ...attribution.actor },
+    authentication: { ...attribution.authentication },
+    clientInfo: attribution.clientInfo ? { ...attribution.clientInfo } : null
+  };
+}
+
+function copyUpdate(update: GoalStatusUpdateRecord): GoalStatusUpdateRecord {
+  return {
+    ...update,
+    ...copyAttribution(update),
+    createdAt: new Date(update.createdAt)
+  };
+}
+
+function matchesUpdate(
+  update: GoalStatusUpdateRecord,
+  input: Parameters<GoalRepository["appendUpdate"]>[0]
+): boolean {
+  return (
+    update.revision === input.expectedRevision + 1 &&
+    update.status === input.status &&
+    update.summary === input.summary &&
+    update.details === input.details &&
+    update.authorityUserId === input.attribution.authorityUserId &&
+    update.actor.kind === input.attribution.actor.kind &&
+    update.actor.id === input.attribution.actor.id &&
+    update.actor.runId === input.attribution.actor.runId &&
+    update.authentication.kind === input.attribution.authentication.kind &&
+    update.authentication.subjectId ===
+      input.attribution.authentication.subjectId &&
+    update.clientInfo?.name === input.attribution.clientInfo?.name &&
+    update.clientInfo?.version === input.attribution.clientInfo?.version
+  );
 }
