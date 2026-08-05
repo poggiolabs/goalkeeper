@@ -187,6 +187,18 @@ describe("authentication contract", () => {
     expect(await response.json()).toEqual({ error: "forbidden" });
   });
 
+  test("rejects logout without an explicit browser origin", async () => {
+    const response = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.authLogout.path}`, {
+        method: "POST",
+        headers: { cookie: "goalkeeper_session=local" }
+      })
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "forbidden" });
+  });
+
   test("documents every authentication route", () => {
     expect(apiOpenApiDocument.paths[apiRoutes.authSession.path].get).toBeDefined();
     expect(apiOpenApiDocument.paths[apiRoutes.authConfig.path].get).toBeDefined();

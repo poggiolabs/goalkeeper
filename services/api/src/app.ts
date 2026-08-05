@@ -293,7 +293,7 @@ export function safeReturnTo(
 
 function hasAllowedOrigin(request: Request, webOrigin: string): boolean {
   const requestOrigin = request.headers.get("origin");
-  return requestOrigin === null || requestOrigin === webOrigin;
+  return requestOrigin === webOrigin;
 }
 
 function matches(
