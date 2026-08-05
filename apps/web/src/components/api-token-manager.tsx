@@ -332,8 +332,8 @@ export function ApiTokenManager() {
                             checked={scopes.includes(scope.id)}
                             onCheckedChange={() => toggleScope(scope.id)}
                           />
-                          <span className="flex min-w-0 flex-1 items-baseline gap-3">
-                            <code className="shrink-0 text-sm font-medium text-foreground">
+                          <span className="flex min-w-0 flex-1 items-center gap-3">
+                            <code className="w-[15ch] shrink-0 text-[13px] font-medium text-foreground">
                               {scope.id}
                             </code>
                             <span className="min-w-0 text-xs leading-4 text-muted-foreground">

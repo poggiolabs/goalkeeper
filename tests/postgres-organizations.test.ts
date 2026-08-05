@@ -94,7 +94,7 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL organizations", () => {
 
     const created = await apiTokens.create(user.id, second.activeOrganizationId, {
       name: "Second organization token",
-      scopes: ["goals:read"]
+      scopes: ["goals:read", "labels:read", "labels:write"]
     });
     expect(
       (await apiTokens.list(user.id, first.activeOrganizationId)).tokens
@@ -104,7 +104,8 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL organizations", () => {
     ).toBe(created.token.id);
     expect(await apiTokens.resolve(created.secret)).toMatchObject({
       userId: user.id,
-      organizationId: second.activeOrganizationId
+      organizationId: second.activeOrganizationId,
+      scopes: ["goals:read", "labels:read", "labels:write"]
     });
   });
 

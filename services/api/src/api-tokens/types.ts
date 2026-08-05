@@ -2,7 +2,7 @@ export const apiTokenScopeRegistry = [
   {
     id: "goals:read",
     label: "Read my goals",
-    description: "Read goals owned by the token owner and organization goal labels.",
+    description: "Read goals owned by the token owner.",
     default: true,
     capabilities: ["goals.read.own"]
   },
@@ -10,15 +10,14 @@ export const apiTokenScopeRegistry = [
     id: "goals:write",
     label: "Write my goals",
     description:
-      "Create goals, update metadata, report status, and manage organization goal labels for goals owned by the token owner.",
+      "Create goals, update metadata, and report status for goals owned by the token owner.",
     default: false,
     capabilities: ["goals.write.own"]
   },
   {
     id: "goals:read:all",
     label: "Read all goals",
-    description:
-      "Read every goal visible to the token owner and organization goal labels.",
+    description: "Read every goal visible to the token owner.",
     default: false,
     capabilities: ["goals.read.own", "goals.read.all"]
   },
@@ -26,9 +25,23 @@ export const apiTokenScopeRegistry = [
     id: "goals:write:all",
     label: "Write all goals",
     description:
-      "Create goals, update metadata, report status, and manage organization goal labels for every goal writable by the token owner.",
+      "Create goals, update metadata, and report status for every goal writable by the token owner.",
     default: false,
     capabilities: ["goals.write.own", "goals.write.all"]
+  },
+  {
+    id: "labels:read",
+    label: "Read labels",
+    description: "Read organization goal labels.",
+    default: false,
+    capabilities: ["labels.read"]
+  },
+  {
+    id: "labels:write",
+    label: "Write labels",
+    description: "Create, update, and delete organization goal labels.",
+    default: false,
+    capabilities: ["labels.write"]
   }
 ] as const;
 

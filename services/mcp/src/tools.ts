@@ -50,7 +50,7 @@ export function createGoalkeeperMcpServer(input: {
     },
     ({ status, ownerUserId, labelId }) =>
       runTool(async () => {
-        const access = await resolveAccess(input, server, "read");
+        const access = await resolveAccess(input, server, "goals", "read");
         const filters = new URLSearchParams();
         if (status) filters.set("status", status);
         if (ownerUserId) filters.set("ownerUserId", ownerUserId);
@@ -69,7 +69,10 @@ export function createGoalkeeperMcpServer(input: {
     },
     ({ goalId }) =>
       runTool(async () =>
-        input.goals.getGoal(await resolveAccess(input, server, "read"), goalId)
+        input.goals.getGoal(
+          await resolveAccess(input, server, "goals", "read"),
+          goalId
+        )
       )
   );
 
@@ -90,7 +93,7 @@ export function createGoalkeeperMcpServer(input: {
     (request) =>
       runTool(async () =>
         input.goals.createGoal(
-          await resolveAccess(input, server, "write"),
+          await resolveAccess(input, server, "goals", "write"),
           request
         )
       )
@@ -121,7 +124,7 @@ export function createGoalkeeperMcpServer(input: {
     ({ goalId, ...request }) =>
       runTool(async () =>
         input.goals.updateGoal(
-          await resolveAccess(input, server, "write"),
+          await resolveAccess(input, server, "goals", "write"),
           goalId,
           request
         )
@@ -139,7 +142,7 @@ export function createGoalkeeperMcpServer(input: {
     ({ goalId }) =>
       runTool(async () =>
         input.goals.listUpdates(
-          await resolveAccess(input, server, "read"),
+          await resolveAccess(input, server, "goals", "read"),
           goalId
         )
       )
@@ -168,7 +171,7 @@ export function createGoalkeeperMcpServer(input: {
     ({ goalId, ...request }) =>
       runTool(async () =>
         input.goals.reportUpdate(
-          await resolveAccess(input, server, "write"),
+          await resolveAccess(input, server, "goals", "write"),
           goalId,
           request
         )
@@ -185,7 +188,9 @@ export function createGoalkeeperMcpServer(input: {
     },
     () =>
       runTool(async () =>
-        input.goals.listLabels(await resolveAccess(input, server, "read"))
+        input.goals.listLabels(
+          await resolveAccess(input, server, "labels", "read")
+        )
       )
   );
 
@@ -200,7 +205,7 @@ export function createGoalkeeperMcpServer(input: {
     ({ labelId }) =>
       runTool(async () =>
         input.goals.getLabel(
-          await resolveAccess(input, server, "read"),
+          await resolveAccess(input, server, "labels", "read"),
           labelId
         )
       )
@@ -221,7 +226,7 @@ export function createGoalkeeperMcpServer(input: {
     (request) =>
       runTool(async () =>
         input.goals.createLabel(
-          await resolveAccess(input, server, "write"),
+          await resolveAccess(input, server, "labels", "write"),
           request
         )
       )
@@ -249,7 +254,7 @@ export function createGoalkeeperMcpServer(input: {
     ({ labelId, ...request }) =>
       runTool(async () =>
         input.goals.updateLabel(
-          await resolveAccess(input, server, "write"),
+          await resolveAccess(input, server, "labels", "write"),
           labelId,
           request
         )
@@ -271,7 +276,7 @@ export function createGoalkeeperMcpServer(input: {
     ({ labelId }) =>
       runTool(async () => {
         await input.goals.deleteLabel(
-          await resolveAccess(input, server, "write"),
+          await resolveAccess(input, server, "labels", "write"),
           labelId
         );
         return { deleted: true, labelId };
@@ -287,6 +292,7 @@ async function resolveAccess(
     organizations: OrganizationService;
   },
   server: McpServer,
+  scopeNamespace: "goals" | "labels",
   operation: "read" | "write"
 ): Promise<GoalAccess> {
   const principal = principalFromAuthInfo(input.authInfo);
@@ -299,6 +305,7 @@ async function resolveAccess(
       authentication: principal.authentication,
       clientInfo: clientInfoFrom(server)
     },
+    scopeNamespace,
     operation,
     roleForUser: (userId, organizationId) =>
       input.organizations.roleForUser(userId, organizationId)

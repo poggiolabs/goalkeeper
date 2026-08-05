@@ -17,6 +17,7 @@ export type ScopedGoalPrincipal = {
 
 export async function resolveScopedGoalAccess(input: {
   principal: ScopedGoalPrincipal;
+  scopeNamespace: "goals" | "labels";
   operation: "read" | "write";
   roleForUser: (
     userId: string,
@@ -36,20 +37,21 @@ export async function resolveScopedGoalAccess(input: {
     );
   }
 
-  const ownScope = `goals:${operation}`;
-  const allScope = `${ownScope}:all`;
+  const ownScope = `${input.scopeNamespace}:${operation}`;
+  const allScope = input.scopeNamespace === "goals" ? `${ownScope}:all` : null;
   if (
     !principal.scopes.includes(ownScope) &&
-    !principal.scopes.includes(allScope)
+    !(allScope && principal.scopes.includes(allScope))
   ) {
     throw new GoalError(
       "insufficient_scope",
-      `This operation requires ${ownScope} or ${allScope}`,
+      `This operation requires ${[ownScope, allScope].filter(Boolean).join(" or ")}`,
       403
     );
   }
 
   const canUseAll =
+    allScope !== null &&
     principal.scopes.includes(allScope) &&
     (operation === "read" || role === "owner" || role === "admin");
 

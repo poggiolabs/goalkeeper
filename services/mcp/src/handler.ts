@@ -11,6 +11,7 @@ import {
   type AuthMetadataOptions
 } from "@modelcontextprotocol/server";
 import type { ApiTokenService } from "../../api/src/api-tokens/service";
+import { apiTokenScopes } from "../../api/src/api-tokens/types";
 import type { GoalService } from "../../api/src/goals/service";
 import type { OrganizationService } from "../../api/src/organizations/service";
 import {
@@ -98,15 +99,18 @@ export function createGoalkeeperMcpHandler(
         exactOriginValidationResponse(request, allowedOrigins);
       if (rejected) return rejected;
 
+      const requiredScope = requiredToolScope(request);
       const authInfo = await requireAuth(request);
       if (authInfo instanceof Response) {
-        return withInitialScopeChallenge(authInfo);
+        return withScopeChallenge(authInfo, requiredScope ?? initialMcpScopes[0]);
       }
-      const requiredScope = requiredToolScope(request);
       if (
         requiredScope &&
         !authInfo.scopes.includes(requiredScope) &&
-        !authInfo.scopes.includes(`${requiredScope}:all`)
+        !(
+          requiredScope.startsWith("goals:") &&
+          authInfo.scopes.includes(`${requiredScope}:all`)
+        )
       ) {
         return bearerAuthChallengeResponse(
           new OAuthError(
@@ -127,27 +131,39 @@ export function createGoalkeeperMcpHandler(
   };
 }
 
-const readTools = new Set([
+const readGoalTools = new Set([
   "list_goals",
   "get_goal",
-  "list_goal_updates",
+  "list_goal_updates"
+]);
+const readLabelTools = new Set([
   "list_goal_labels",
   "get_goal_label"
 ]);
-const writeTools = new Set([
+const writeGoalTools = new Set([
   "create_goal",
   "update_goal",
-  "report_goal_update",
+  "report_goal_update"
+]);
+const writeLabelTools = new Set([
   "create_goal_label",
   "update_goal_label",
   "delete_goal_label"
 ]);
 
-function requiredToolScope(request: Request): "goals:read" | "goals:write" | null {
+type RequiredToolScope =
+  | "goals:read"
+  | "goals:write"
+  | "labels:read"
+  | "labels:write";
+
+function requiredToolScope(request: Request): RequiredToolScope | null {
   if (request.headers.get("mcp-method") !== "tools/call") return null;
   const toolName = request.headers.get("mcp-name");
-  if (toolName && readTools.has(toolName)) return "goals:read";
-  if (toolName && writeTools.has(toolName)) return "goals:write";
+  if (toolName && readGoalTools.has(toolName)) return "goals:read";
+  if (toolName && writeGoalTools.has(toolName)) return "goals:write";
+  if (toolName && readLabelTools.has(toolName)) return "labels:read";
+  if (toolName && writeLabelTools.has(toolName)) return "labels:write";
   return null;
 }
 
@@ -160,7 +176,7 @@ function createMetadataOptions(
   const options = {
     oauthMetadata: provider.metadata,
     resourceServerUrl: resource,
-    scopesSupported: [...initialMcpScopes],
+    scopesSupported: [...apiTokenScopes],
     resourceName: "Goalkeeper MCP",
     dangerouslyAllowInsecureIssuerUrl
   } satisfies AuthMetadataOptions;
@@ -170,7 +186,10 @@ function createMetadataOptions(
 
 const initialMcpScopes = ["goals:read"] as const;
 
-function withInitialScopeChallenge(response: Response): Response {
+function withScopeChallenge(
+  response: Response,
+  requiredScope: RequiredToolScope
+): Response {
   if (response.status !== 401) return response;
   const challenge = response.headers.get("www-authenticate");
   if (!challenge || /(?:^|[,\s])scope=/i.test(challenge)) return response;
@@ -178,7 +197,7 @@ function withInitialScopeChallenge(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set(
     "www-authenticate",
-    `${challenge}, scope="${initialMcpScopes.join(" ")}"`
+    `${challenge}, scope="${requiredScope}"`
   );
   return new Response(response.body, {
     status: response.status,

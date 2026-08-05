@@ -18,6 +18,7 @@ describe("scoped goal access", () => {
     await expect(
       resolveScopedGoalAccess({
         principal: { ...principal, scopes: [] },
+        scopeNamespace: "goals",
         operation: "read",
         roleForUser: () => "member"
       })
@@ -26,6 +27,7 @@ describe("scoped goal access", () => {
     await expect(
       resolveScopedGoalAccess({
         principal,
+        scopeNamespace: "goals",
         operation: "read",
         roleForUser: () => null
       })
@@ -36,6 +38,7 @@ describe("scoped goal access", () => {
     await expect(
       resolveScopedGoalAccess({
         principal: { ...principal, scopes: ["goals:read:all"] },
+        scopeNamespace: "goals",
         operation: "read",
         roleForUser: () => "member"
       })
@@ -44,6 +47,7 @@ describe("scoped goal access", () => {
     await expect(
       resolveScopedGoalAccess({
         principal: { ...principal, scopes: ["goals:write:all"] },
+        scopeNamespace: "goals",
         operation: "write",
         roleForUser: () => "member"
       })
@@ -52,6 +56,7 @@ describe("scoped goal access", () => {
     await expect(
       resolveScopedGoalAccess({
         principal: { ...principal, scopes: ["goals:write:all"] },
+        scopeNamespace: "goals",
         operation: "write",
         roleForUser: () => "admin"
       })
@@ -62,6 +67,7 @@ describe("scoped goal access", () => {
     await expect(
       resolveScopedGoalAccess({
         principal,
+        scopeNamespace: "goals",
         operation: "write",
         roleForUser: () => "owner"
       })
@@ -70,5 +76,34 @@ describe("scoped goal access", () => {
       authentication: principal.authentication,
       clientInfo: principal.clientInfo
     });
+  });
+
+  test("requires dedicated label scopes without all-access variants", async () => {
+    await expect(
+      resolveScopedGoalAccess({
+        principal: { ...principal, scopes: ["goals:read:all"] },
+        scopeNamespace: "labels",
+        operation: "read",
+        roleForUser: () => "admin"
+      })
+    ).rejects.toMatchObject({ code: "insufficient_scope", status: 403 });
+
+    await expect(
+      resolveScopedGoalAccess({
+        principal: { ...principal, scopes: ["labels:read"] },
+        scopeNamespace: "labels",
+        operation: "read",
+        roleForUser: () => "member"
+      })
+    ).resolves.toMatchObject({ readAll: false, writeAll: false });
+
+    await expect(
+      resolveScopedGoalAccess({
+        principal: { ...principal, scopes: ["labels:write"] },
+        scopeNamespace: "labels",
+        operation: "write",
+        roleForUser: () => "member"
+      })
+    ).resolves.toMatchObject({ readAll: false, writeAll: false });
   });
 });

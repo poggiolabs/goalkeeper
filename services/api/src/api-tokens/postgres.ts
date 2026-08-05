@@ -680,6 +680,32 @@ export async function migrateApiDatabase(sql: SQL): Promise<void> {
         values ('009_goal_updates')
       `;
     }
+
+    const labelScopesApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '010_label_scopes'
+    `;
+    if (labelScopesApplied.length === 0) {
+      await transaction`
+        alter table api_tokens
+        drop constraint if exists api_tokens_scopes_supported_check
+      `;
+      await transaction`
+        alter table api_tokens
+        add constraint api_tokens_scopes_supported_check
+        check (scopes <@ array[
+          'goals:read',
+          'goals:write',
+          'goals:read:all',
+          'goals:write:all',
+          'labels:read',
+          'labels:write'
+        ]::text[])
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('010_label_scopes')
+      `;
+    }
   });
 }
 

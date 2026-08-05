@@ -143,6 +143,41 @@ describe("goal REST contract", () => {
       goals: [{ id: goal.id, labels: [{ id: label.id }] }]
     });
 
+    const deniedLabelList = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.goalLabelsList.path}`, {
+        headers: { authorization: `Bearer ${readToken.secret}` }
+      })
+    );
+    expect(deniedLabelList.status).toBe(403);
+    expect(await deniedLabelList.json()).toMatchObject({
+      error: "insufficient_scope"
+    });
+
+    const labelToken = await apiTokens.create(user.id, organizationId, {
+      name: "Label manager",
+      scopes: ["labels:read", "labels:write"]
+    });
+    const labelList = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.goalLabelsList.path}`, {
+        headers: { authorization: `Bearer ${labelToken.secret}` }
+      })
+    );
+    expect(labelList.status).toBe(200);
+    expect(await labelList.json()).toMatchObject({
+      labels: [{ id: label.id }]
+    });
+    const tokenLabelCreate = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.goalLabelsCreate.path}`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${labelToken.secret}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ name: "API token" })
+      })
+    );
+    expect(tokenLabelCreate.status).toBe(201);
+
     const denied = await handleApiRequest(
       new Request(`http://localhost${apiRoutes.goalsCreate.path}`, {
         method: "POST",
@@ -852,7 +887,9 @@ describe("API token management contract", () => {
         expect.objectContaining({ id: "goals:read", default: true }),
         expect.objectContaining({ id: "goals:write", default: false }),
         expect.objectContaining({ id: "goals:read:all", default: false }),
-        expect.objectContaining({ id: "goals:write:all", default: false })
+        expect.objectContaining({ id: "goals:write:all", default: false }),
+        expect.objectContaining({ id: "labels:read", default: false }),
+        expect.objectContaining({ id: "labels:write", default: false })
       ]
     });
   });

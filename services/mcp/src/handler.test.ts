@@ -64,7 +64,12 @@ describe("Goalkeeper MCP server", () => {
       harness.organizationId,
       {
         name: "MCP integration",
-        scopes: ["goals:read", "goals:write"]
+        scopes: [
+          "goals:read",
+          "goals:write",
+          "labels:read",
+          "labels:write"
+        ]
       }
     );
     const client = new Client(
@@ -204,6 +209,9 @@ describe("Goalkeeper MCP server", () => {
           arguments: { detailedDescription: "This must be denied" }
         })
       ).rejects.toBeInstanceOf(InsufficientScopeError);
+      await expect(
+        client.callTool({ name: "list_goal_labels", arguments: {} })
+      ).rejects.toBeInstanceOf(InsufficientScopeError);
     } finally {
       await client.close();
       await harness.handler.close();
@@ -243,7 +251,14 @@ describe("Goalkeeper MCP server", () => {
     expect(await protectedMetadata.json()).toMatchObject({
       resource: "https://mcp.example.com/mcp",
       authorization_servers: ["https://auth.example.com"],
-      scopes_supported: ["goals:read"]
+      scopes_supported: [
+        "goals:read",
+        "goals:write",
+        "goals:read:all",
+        "goals:write:all",
+        "labels:read",
+        "labels:write"
+      ]
     });
 
     const authorizationMetadata = await handler.fetch(

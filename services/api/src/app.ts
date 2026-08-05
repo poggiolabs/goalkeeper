@@ -401,7 +401,12 @@ export function createApiHandler(dependencies: ApiDependencies) {
 
     if (matches(request, apiRoutes.goalsList)) {
       try {
-        const resolved = await resolveGoalAccess(request, dependencies, "read");
+        const resolved = await resolveGoalAccess(
+          request,
+          dependencies,
+          "goals",
+          "read"
+        );
         if (!resolved) {
           return unauthorizedResponse(dependencies.auth, request, webOrigin);
         }
@@ -417,7 +422,12 @@ export function createApiHandler(dependencies: ApiDependencies) {
 
     if (matches(request, apiRoutes.goalsCreate)) {
       try {
-        const resolved = await resolveGoalAccess(request, dependencies, "write");
+        const resolved = await resolveGoalAccess(
+          request,
+          dependencies,
+          "goals",
+          "write"
+        );
         if (!resolved) {
           return unauthorizedResponse(dependencies.auth, request, webOrigin);
         }
@@ -436,7 +446,12 @@ export function createApiHandler(dependencies: ApiDependencies) {
 
     if (matches(request, apiRoutes.goalLabelsList)) {
       try {
-        const resolved = await resolveGoalAccess(request, dependencies, "read");
+        const resolved = await resolveGoalAccess(
+          request,
+          dependencies,
+          "labels",
+          "read"
+        );
         if (!resolved) {
           return unauthorizedResponse(dependencies.auth, request, webOrigin);
         }
@@ -452,7 +467,12 @@ export function createApiHandler(dependencies: ApiDependencies) {
 
     if (matches(request, apiRoutes.goalLabelsCreate)) {
       try {
-        const resolved = await resolveGoalAccess(request, dependencies, "write");
+        const resolved = await resolveGoalAccess(
+          request,
+          dependencies,
+          "labels",
+          "write"
+        );
         if (!resolved) {
           return unauthorizedResponse(dependencies.auth, request, webOrigin);
         }
@@ -476,6 +496,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
         const resolved = await resolveGoalAccess(
           request,
           dependencies,
+          "goals",
           operation
         );
         if (!resolved) {
@@ -519,6 +540,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
         const resolved = await resolveGoalAccess(
           request,
           dependencies,
+          "goals",
           operation
         );
         if (!resolved) {
@@ -562,6 +584,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
         const resolved = await resolveGoalAccess(
           request,
           dependencies,
+          "labels",
           operation
         );
         if (!resolved) {
@@ -606,6 +629,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
 async function resolveGoalAccess(
   request: Request,
   dependencies: ApiDependencies,
+  scopeNamespace: "goals" | "labels",
   operation: "read" | "write"
 ): Promise<{ access: GoalAccess; session: boolean } | null> {
   const authorization = request.headers.get("authorization");
@@ -624,6 +648,7 @@ async function resolveGoalAccess(
           authentication: { kind: "api_token", subjectId: principal.tokenId },
           clientInfo: null
         },
+        scopeNamespace,
         operation,
         roleForUser: (userId, organizationId) =>
           dependencies.organizations.roleForUser(userId, organizationId)
