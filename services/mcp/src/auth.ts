@@ -6,6 +6,10 @@ import {
   type OAuthTokenVerifier
 } from "@modelcontextprotocol/server";
 import type { ApiTokenService } from "../../api/src/api-tokens/service";
+import type {
+  GoalActor,
+  GoalAuthentication
+} from "../../api/src/goals/types";
 
 export type McpOAuthIdentity = {
   userId: string;
@@ -14,6 +18,8 @@ export type McpOAuthIdentity = {
   scopes: string[];
   expiresAt: number;
   resource: string;
+  /** A provider-verified agent binding. Client-supplied metadata is insufficient. */
+  actor?: { kind: "agent"; id: string; runId?: string | null };
 };
 
 export interface McpOAuthProvider {
@@ -39,6 +45,8 @@ export type GoalkeeperMcpPrincipal = {
   kind: "apiToken" | "oauth";
   userId: string;
   organizationId: string;
+  actor: GoalActor;
+  authentication: GoalAuthentication;
 };
 
 export function createMcpTokenVerifier(input: {
@@ -62,7 +70,12 @@ export function createMcpTokenVerifier(input: {
             goalkeeperPrincipal: {
               kind: "apiToken",
               userId: apiToken.userId,
-              organizationId: apiToken.organizationId
+              organizationId: apiToken.organizationId,
+              actor: { kind: "client", id: apiToken.tokenId, runId: null },
+              authentication: {
+                kind: "api_token",
+                subjectId: apiToken.tokenId
+              }
             } satisfies GoalkeeperMcpPrincipal
           }
         };
@@ -87,7 +100,15 @@ export function createMcpTokenVerifier(input: {
           goalkeeperPrincipal: {
             kind: "oauth",
             userId: identity.userId,
-            organizationId: identity.organizationId
+            organizationId: identity.organizationId,
+            actor: identity.actor
+              ? {
+                  kind: "agent",
+                  id: identity.actor.id,
+                  runId: identity.actor.runId ?? null
+                }
+              : { kind: "client", id: identity.clientId, runId: null },
+            authentication: { kind: "oauth", subjectId: identity.clientId }
           } satisfies GoalkeeperMcpPrincipal
         }
       };
@@ -106,11 +127,65 @@ export function principalFromAuthInfo(authInfo: AuthInfo): GoalkeeperMcpPrincipa
     typeof principal.userId !== "string" ||
     !principal.userId ||
     typeof principal.organizationId !== "string" ||
-    !principal.organizationId
+    !principal.organizationId ||
+    !isGoalActor(principal.actor) ||
+    !isGoalAuthentication(principal.authentication) ||
+    !matchesPrincipalKind(principal)
   ) {
     throw new OAuthError(OAuthErrorCode.InvalidToken, "Invalid Goalkeeper principal");
   }
   return principal as GoalkeeperMcpPrincipal;
+}
+
+function isGoalActor(value: unknown): value is GoalActor {
+  if (!value || typeof value !== "object") return false;
+  const actor = value as Partial<GoalActor>;
+  if (
+    typeof actor.id !== "string" ||
+    !actor.id.trim() ||
+    actor.id.length > 200
+  ) {
+    return false;
+  }
+  if (actor.kind === "agent") {
+    return (
+      actor.runId === null ||
+      (typeof actor.runId === "string" &&
+        actor.runId.length <= 200 &&
+        actor.runId.trim().length > 0)
+    );
+  }
+  return (
+    (actor.kind === "user" || actor.kind === "client") && actor.runId === null
+  );
+}
+
+function matchesPrincipalKind(
+  principal: Partial<GoalkeeperMcpPrincipal>
+): boolean {
+  if (principal.kind === "apiToken") {
+    return (
+      principal.actor?.kind === "client" &&
+      principal.authentication?.kind === "api_token"
+    );
+  }
+  return (
+    principal.kind === "oauth" &&
+    (principal.actor?.kind === "client" || principal.actor?.kind === "agent") &&
+    principal.authentication?.kind === "oauth"
+  );
+}
+
+function isGoalAuthentication(value: unknown): value is GoalAuthentication {
+  if (!value || typeof value !== "object") return false;
+  const authentication = value as Partial<GoalAuthentication>;
+  return (
+    (authentication.kind === "session" ||
+      authentication.kind === "api_token" ||
+      authentication.kind === "oauth") &&
+    typeof authentication.subjectId === "string" &&
+    authentication.subjectId.length > 0
+  );
 }
 
 export function assertOAuthProviderConfiguration(

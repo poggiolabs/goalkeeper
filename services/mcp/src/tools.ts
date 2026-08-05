@@ -11,7 +11,10 @@ import {
   type GoalAccess,
   type GoalService
 } from "../../api/src/goals/service";
-import { goalStatuses } from "../../api/src/goals/types";
+import {
+  goalStatuses,
+  type GoalClientInfo
+} from "../../api/src/goals/types";
 import type { OrganizationService } from "../../api/src/organizations/service";
 import { principalFromAuthInfo } from "./auth";
 
@@ -29,7 +32,7 @@ export function createGoalkeeperMcpServer(input: {
     { name: "goalkeeper", version: "0.0.0" },
     {
       instructions:
-        "Manage durable organization goals and their labels. Execution schedules are not part of this server."
+        "Manage durable organization goals, append-only status updates, and labels. Execution schedules are not part of this server."
     }
   );
 
@@ -47,7 +50,7 @@ export function createGoalkeeperMcpServer(input: {
     },
     ({ status, ownerUserId, labelId }) =>
       runTool(async () => {
-        const access = await resolveAccess(input, "read");
+        const access = await resolveAccess(input, server, "read");
         const filters = new URLSearchParams();
         if (status) filters.set("status", status);
         if (ownerUserId) filters.set("ownerUserId", ownerUserId);
@@ -66,7 +69,7 @@ export function createGoalkeeperMcpServer(input: {
     },
     ({ goalId }) =>
       runTool(async () =>
-        input.goals.getGoal(await resolveAccess(input, "read"), goalId)
+        input.goals.getGoal(await resolveAccess(input, server, "read"), goalId)
       )
   );
 
@@ -86,7 +89,10 @@ export function createGoalkeeperMcpServer(input: {
     },
     (request) =>
       runTool(async () =>
-        input.goals.createGoal(await resolveAccess(input, "write"), request)
+        input.goals.createGoal(
+          await resolveAccess(input, server, "write"),
+          request
+        )
       )
   );
 
@@ -95,13 +101,12 @@ export function createGoalkeeperMcpServer(input: {
     {
       title: "Update goal",
       description:
-        "Update goal description, criteria, state, ownership, or labels.",
+        "Update goal description, criteria, ownership, or labels. Use report_goal_update to change status.",
       inputSchema: z
         .object({
           goalId: z.uuid(),
           title: z.string().min(1).max(200).optional(),
           detailedDescription: z.string().min(1).optional(),
-          status: z.enum(goalStatuses).optional(),
           ownerUserId: z.string().min(1).max(200).optional(),
           labelIds: z.array(z.uuid()).max(20).optional(),
           criteria: z.array(goalCriterionSchema).max(100).optional()
@@ -116,7 +121,7 @@ export function createGoalkeeperMcpServer(input: {
     ({ goalId, ...request }) =>
       runTool(async () =>
         input.goals.updateGoal(
-          await resolveAccess(input, "write"),
+          await resolveAccess(input, server, "write"),
           goalId,
           request
         )
@@ -124,22 +129,50 @@ export function createGoalkeeperMcpServer(input: {
   );
 
   server.registerTool(
-    "delete_goal",
+    "list_goal_updates",
     {
-      title: "Delete goal",
-      description: "Permanently delete a goal.",
+      title: "List goal updates",
+      description: "List a goal's append-only status history.",
       inputSchema: z.object({ goalId: z.uuid() }),
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: false
-      }
+      annotations: { readOnlyHint: true, idempotentHint: true }
     },
     ({ goalId }) =>
-      runTool(async () => {
-        await input.goals.deleteGoal(await resolveAccess(input, "write"), goalId);
-        return { deleted: true, goalId };
-      })
+      runTool(async () =>
+        input.goals.listUpdates(
+          await resolveAccess(input, server, "read"),
+          goalId
+        )
+      )
+  );
+
+  server.registerTool(
+    "report_goal_update",
+    {
+      title: "Report goal update",
+      description:
+        "Append a status report and atomically advance the goal's status and revision.",
+      inputSchema: z.object({
+        goalId: z.uuid(),
+        status: z.enum(goalStatuses),
+        summary: z.string().min(1).max(500),
+        details: z.string().min(1),
+        expectedRevision: z.number().int().positive(),
+        idempotencyKey: z.string().min(1).max(200)
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true
+      }
+    },
+    ({ goalId, ...request }) =>
+      runTool(async () =>
+        input.goals.reportUpdate(
+          await resolveAccess(input, server, "write"),
+          goalId,
+          request
+        )
+      )
   );
 
   server.registerTool(
@@ -152,7 +185,7 @@ export function createGoalkeeperMcpServer(input: {
     },
     () =>
       runTool(async () =>
-        input.goals.listLabels(await resolveAccess(input, "read"))
+        input.goals.listLabels(await resolveAccess(input, server, "read"))
       )
   );
 
@@ -166,7 +199,10 @@ export function createGoalkeeperMcpServer(input: {
     },
     ({ labelId }) =>
       runTool(async () =>
-        input.goals.getLabel(await resolveAccess(input, "read"), labelId)
+        input.goals.getLabel(
+          await resolveAccess(input, server, "read"),
+          labelId
+        )
       )
   );
 
@@ -184,7 +220,10 @@ export function createGoalkeeperMcpServer(input: {
     },
     (request) =>
       runTool(async () =>
-        input.goals.createLabel(await resolveAccess(input, "write"), request)
+        input.goals.createLabel(
+          await resolveAccess(input, server, "write"),
+          request
+        )
       )
   );
 
@@ -210,7 +249,7 @@ export function createGoalkeeperMcpServer(input: {
     ({ labelId, ...request }) =>
       runTool(async () =>
         input.goals.updateLabel(
-          await resolveAccess(input, "write"),
+          await resolveAccess(input, server, "write"),
           labelId,
           request
         )
@@ -232,7 +271,7 @@ export function createGoalkeeperMcpServer(input: {
     ({ labelId }) =>
       runTool(async () => {
         await input.goals.deleteLabel(
-          await resolveAccess(input, "write"),
+          await resolveAccess(input, server, "write"),
           labelId
         );
         return { deleted: true, labelId };
@@ -247,6 +286,7 @@ async function resolveAccess(
     authInfo: AuthInfo;
     organizations: OrganizationService;
   },
+  server: McpServer,
   operation: "read" | "write"
 ): Promise<GoalAccess> {
   const principal = principalFromAuthInfo(input.authInfo);
@@ -280,8 +320,19 @@ async function resolveAccess(
     writeAll:
       operation === "write" &&
       input.authInfo.scopes.includes(allScope) &&
-      (role === "owner" || role === "admin")
+      (role === "owner" || role === "admin"),
+    actor: principal.actor,
+    authentication: principal.authentication,
+    clientInfo: clientInfoFrom(server)
   };
+}
+
+function clientInfoFrom(server: McpServer): GoalClientInfo | null {
+  const implementation = server.server.getClientVersion();
+  if (!implementation) return null;
+  const name = implementation.name.trim().slice(0, 200);
+  const version = implementation.version.trim().slice(0, 100);
+  return name && version ? { name, version } : null;
 }
 
 async function runTool(operation: () => Promise<unknown>): Promise<CallToolResult> {

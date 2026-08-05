@@ -123,13 +123,14 @@ export function createGoalkeeperMcpHandler(
 const readTools = new Set([
   "list_goals",
   "get_goal",
+  "list_goal_updates",
   "list_goal_labels",
   "get_goal_label"
 ]);
 const writeTools = new Set([
   "create_goal",
   "update_goal",
-  "delete_goal",
+  "report_goal_update",
   "create_goal_label",
   "update_goal_label",
   "delete_goal_label"

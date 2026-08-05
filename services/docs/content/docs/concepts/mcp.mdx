@@ -5,8 +5,9 @@ description: Goal and label tools for AI agents.
 
 Goalkeeper exposes a stateless Streamable HTTP MCP endpoint at `/mcp`. It
 supports the MCP `2026-07-28` protocol and the stateless `2025-11-25` fallback.
-The tools mirror the goal and label CRUD contract; schedules are intentionally
-not exposed.
+The tools create and read goals, update goal metadata, append and list status
+updates, and manage labels. Goals are archived through `report_goal_update`;
+there is no hard-delete tool. Schedules are intentionally not exposed.
 
 Local development and self-hosted deployments can authenticate with a
 Goalkeeper API token in the `Authorization: Bearer` header. The token's
@@ -21,6 +22,8 @@ the MCP service remains a resource server. The provider must:
   Registration `registration_endpoint`;
 - validate token issuer, expiry, and the exact `/mcp` resource audience;
 - return the Goalkeeper user, organization, client, and granted scopes; and
+- optionally return a provider-verified agent ID and run ID when the client is
+  acting as a specific agent; and
 - optionally advertise Client ID Metadata Document support, which modern MCP
   clients prefer before falling back to DCR.
 
@@ -28,6 +31,12 @@ When a provider is configured, Goalkeeper publishes RFC 9728 Protected
 Resource Metadata and includes its URL in bearer challenges. Authorization
 server and registration endpoints are discovered from provider metadata;
 Goalkeeper does not proxy or reimplement them.
+
+Status-update attribution separates the authorizing user from the immediate
+actor. API-token and ordinary OAuth calls attribute the actor to the verified
+credential or OAuth client. A provider-verified agent binding takes precedence
+when present. MCP client name and version are recorded separately as
+self-reported descriptive metadata and never establish identity.
 
 See the [MCP authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
 for the discovery and client-registration flow.

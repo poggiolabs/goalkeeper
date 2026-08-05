@@ -89,7 +89,8 @@ describe("Goalkeeper MCP server", () => {
           "list_goals",
           "create_goal",
           "update_goal",
-          "delete_goal",
+          "list_goal_updates",
+          "report_goal_update",
           "list_goal_labels"
         ])
       );
@@ -116,6 +117,40 @@ describe("Goalkeeper MCP server", () => {
         }
       });
       expect(createResult.isError).not.toBe(true);
+      const goal = (createResult.structuredContent as {
+        goal: { id: string };
+      }).goal;
+
+      const updateResult = await client.callTool({
+        name: "report_goal_update",
+        arguments: {
+          goalId: goal.id,
+          status: "completed",
+          summary: "MCP contract complete",
+          details: "The goal is readable and mutable through MCP.",
+          expectedRevision: 1,
+          idempotencyKey: "mcp-contract-complete"
+        }
+      });
+      expect(updateResult.structuredContent).toMatchObject({
+        update: {
+          goalId: goal.id,
+          revision: 2,
+          status: "completed",
+          authorityUserId: harness.user.id,
+          actor: { kind: "client", id: token.token.id, runId: null },
+          authentication: { kind: "api_token", subjectId: token.token.id },
+          clientInfo: { name: "goalkeeper-test", version: "1.0.0" }
+        }
+      });
+
+      const updatesResult = await client.callTool({
+        name: "list_goal_updates",
+        arguments: { goalId: goal.id }
+      });
+      expect(
+        (updatesResult.structuredContent as { updates: unknown[] }).updates
+      ).toHaveLength(2);
 
       const listResult = await client.callTool({
         name: "list_goals",
@@ -131,7 +166,9 @@ describe("Goalkeeper MCP server", () => {
                 description: "The goal is readable through MCP."
               }
             ],
-            labels: [{ id: label.id, name: "MCP" }]
+            labels: [{ id: label.id, name: "MCP" }],
+            status: "completed",
+            revision: 2
           }
         ]
       });
@@ -333,9 +370,14 @@ describe("Goalkeeper MCP server", () => {
           userId: harness.user.id,
           organizationId: harness.organizationId,
           clientId: "oauth-client",
-          scopes: ["openid", "goals:read"],
+          scopes: ["openid", "goals:read", "goals:write"],
           expiresAt: Math.floor(Date.now() / 1000) + 3600,
-          resource: "https://mcp.example.com/mcp"
+          resource: "https://mcp.example.com/mcp",
+          actor: {
+            kind: "agent",
+            id: "market-research-agent",
+            runId: "run-7"
+          }
         };
       }
     };
@@ -365,6 +407,39 @@ describe("Goalkeeper MCP server", () => {
         arguments: {}
       });
       expect(result.structuredContent).toEqual({ goals: [] });
+      const createResult = await client.callTool({
+        name: "create_goal",
+        arguments: { detailedDescription: "Verify OAuth agent attribution" }
+      });
+      const goal = (createResult.structuredContent as {
+        goal: { id: string };
+      }).goal;
+      const updateResult = await client.callTool({
+        name: "report_goal_update",
+        arguments: {
+          goalId: goal.id,
+          status: "active",
+          summary: "Research underway",
+          details: "The agent completed the initial source review.",
+          expectedRevision: 1,
+          idempotencyKey: "run-7-source-review"
+        }
+      });
+      expect(updateResult.structuredContent).toMatchObject({
+        update: {
+          authorityUserId: harness.user.id,
+          actor: {
+            kind: "agent",
+            id: "market-research-agent",
+            runId: "run-7"
+          },
+          authentication: { kind: "oauth", subjectId: "oauth-client" },
+          clientInfo: {
+            name: "goalkeeper-oauth-test",
+            version: "1.0.0"
+          }
+        }
+      });
     } finally {
       await client.close();
       await handler.close();
