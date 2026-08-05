@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/poggiolabs/goalkeeper/compare/v0.1.0...v0.1.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* **web:** restore local API default ([#11](https://github.com/poggiolabs/goalkeeper/issues/11)) ([839c689](https://github.com/poggiolabs/goalkeeper/commit/839c689aecbbd0ef4c8d4b75b723109a731e2790))
+
 ## 0.1.0 (2026-08-05)
 
 
