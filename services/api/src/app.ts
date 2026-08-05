@@ -614,17 +614,19 @@ async function resolveGoalAccess(
     if (!principal) {
       throw new ApiTokenError("invalid_api_token", "Invalid API token", 401);
     }
-    const allScope = `goals:${operation}:all` as const;
-    const action = principal.scopes.includes(allScope)
-      ? `goals.${operation}.all`
-      : `goals.${operation}.own`;
     const role = await dependencies.organizations.roleForUser(
       principal.userId,
       principal.organizationId
     );
+    const allScope = `goals:${operation}:all` as const;
+    const canUseAll =
+      principal.scopes.includes(allScope) &&
+      (operation === "read" || role === "owner" || role === "admin");
+    const action = canUseAll
+      ? `goals.${operation}.all`
+      : `goals.${operation}.own`;
     await authorizeApiToken(principal, action, () => {
-      if (!role) return false;
-      return action !== "goals.write.all" || role === "owner" || role === "admin";
+      return role !== null;
     });
     return {
       access: {

@@ -6,6 +6,7 @@ title: Services
 | --- | --- | --- |
 | Web | `http://localhost:3000` | Browser user interface |
 | REST API | `http://localhost:3001` | Public application API boundary |
+| MCP | `http://localhost:3002/mcp` | Goal and label tools for AI agents |
 | Docs | `http://localhost:3003` | Product and engineering documentation |
 | PostgreSQL | `localhost:5432` | Local relational data store |
 
@@ -19,7 +20,7 @@ renaming and membership-role management.
 
 ## Health checks
 
-The REST API exposes `GET /health`.
+The REST API and MCP service expose `GET /health` on their respective origins.
 
 ## API contracts
 

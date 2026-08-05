@@ -64,7 +64,8 @@ export function createApiTokenService(
       userId: record.ownerUserId,
       organizationId: record.organizationId,
       sessionId: null,
-      scopes: record.scopes
+      scopes: record.scopes,
+      expiresAt: record.expiresAt.toISOString()
     };
   }
 

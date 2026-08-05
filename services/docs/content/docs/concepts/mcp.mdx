@@ -1,0 +1,33 @@
+---
+title: MCP
+description: Goal and label tools for AI agents.
+---
+
+Goalkeeper exposes a stateless Streamable HTTP MCP endpoint at `/mcp`. It
+supports the MCP `2026-07-28` protocol and the stateless `2025-11-25` fallback.
+The tools mirror the goal and label CRUD contract; schedules are intentionally
+not exposed.
+
+Local development and self-hosted deployments can authenticate with a
+Goalkeeper API token in the `Authorization: Bearer` header. The token's
+organization, scopes, expiry, and owner's live membership role constrain every
+tool call.
+
+Hosted deployments can inject an `McpOAuthProvider` into
+`createGoalkeeperMcpHandler`. That provider is the OAuth authorization server;
+the MCP service remains a resource server. The provider must:
+
+- publish OAuth authorization-server metadata with PKCE and a Dynamic Client
+  Registration `registration_endpoint`;
+- validate token issuer, expiry, and the exact `/mcp` resource audience;
+- return the Goalkeeper user, organization, client, and granted scopes; and
+- optionally advertise Client ID Metadata Document support, which modern MCP
+  clients prefer before falling back to DCR.
+
+When a provider is configured, Goalkeeper publishes RFC 9728 Protected
+Resource Metadata and includes its URL in bearer challenges. Authorization
+server and registration endpoints are discovered from provider metadata;
+Goalkeeper does not proxy or reimplement them.
+
+See the [MCP authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
+for the discovery and client-registration flow.

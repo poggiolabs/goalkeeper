@@ -69,6 +69,7 @@ export type ApiTokenPrincipal = {
   organizationId: string;
   sessionId: null;
   scopes: ApiTokenScope[];
+  expiresAt: string;
 };
 
 export type ApiTokenRecord = {

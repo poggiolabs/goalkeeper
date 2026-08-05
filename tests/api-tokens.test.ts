@@ -103,7 +103,8 @@ describe("API token lifecycle", () => {
       userId: "user-1",
       organizationId,
       sessionId: null,
-      scopes: ["goals:write:all"]
+      scopes: ["goals:write:all"],
+      expiresAt: "2026-11-02T12:00:00.000Z"
     });
     expect(repository.records[0]?.lastUsedAt?.toISOString()).toBe(
       "2026-08-04T12:00:00.000Z"
@@ -170,7 +171,8 @@ describe("API token authorization", () => {
     userId: "user-1",
     organizationId,
     sessionId: null,
-    scopes: ["goals:read" as const]
+    scopes: ["goals:read" as const],
+    expiresAt: "2026-11-02T12:00:00.000Z"
   };
 
   test("requires both the canonical scope and the owner's live authority", async () => {

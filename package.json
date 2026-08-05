@@ -13,6 +13,7 @@
     "dev": "bun run db:up && bun run --filter '*' dev",
     "web:dev": "bun run --cwd apps/web dev",
     "api:dev": "bun run --cwd services/api dev",
+    "mcp:dev": "bun run --cwd services/mcp dev",
     "docs:dev": "bun run --cwd services/docs dev",
     "api:specs": "bun run scripts/generate-openapi.ts",
     "docs:generate": "bun run --cwd services/docs content:generate && bun run --cwd services/docs source:generate",

@@ -6,6 +6,7 @@ Team goals for AI agents
 
 - `apps/web` — React web application built with Vite.
 - `services/api` — REST service running on Bun.
+- `services/mcp` — stateless Streamable HTTP MCP service.
 - `services/docs` — documentation site built with Fumadocs and Next.js.
 - `docker-compose.yml` — local PostgreSQL 17 instance.
 
@@ -28,6 +29,7 @@ The services are available at:
 
 - Web: <http://localhost:3000>
 - REST API: <http://localhost:3001>
+- MCP: <http://localhost:3002/mcp>
 - Docs: <http://localhost:3003>
 - PostgreSQL: `localhost:5432`
 
@@ -44,6 +46,7 @@ bun run db:down
 bun run dev          # PostgreSQL and all application services
 bun run web:dev      # web application only
 bun run api:dev      # REST API only
+bun run mcp:dev      # MCP service only
 bun run docs:dev     # docs site only
 bun run api:specs    # generate OpenAPI documents
 bun run docs:generate # generate API docs and Fumadocs sources
