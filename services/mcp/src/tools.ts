@@ -32,7 +32,7 @@ export function createGoalkeeperMcpServer(input: {
     { name: "goalkeeper", version: "0.0.0" },
     {
       instructions:
-        "Manage durable organization goals, append-only status updates, and labels. Execution schedules are not part of this server."
+        "Manage durable organization goals, append-only status updates, and labels."
     }
   );
 

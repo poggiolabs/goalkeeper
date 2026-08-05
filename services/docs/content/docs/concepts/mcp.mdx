@@ -7,7 +7,7 @@ Goalkeeper exposes a stateless Streamable HTTP MCP endpoint at `/mcp`. It
 supports the MCP `2026-07-28` protocol and the stateless `2025-11-25` fallback.
 The tools create and read goals, update goal metadata, append and list status
 updates, and manage labels. Goals are archived through `report_goal_update`;
-there is no hard-delete tool. Schedules are intentionally not exposed.
+there is no hard-delete tool.
 
 Local development and self-hosted deployments can authenticate with a
 Goalkeeper API token in the `Authorization: Bearer` header. The token's
