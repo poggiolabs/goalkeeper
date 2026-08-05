@@ -7,6 +7,8 @@ import {
 import { createApiTokenService } from "./api-tokens/service";
 import { LogEmailDelivery } from "./auth/email-delivery";
 import { createPostgresEmailAuthBackend } from "./auth/email";
+import { createPostgresOrganizationRepository } from "./organizations/postgres";
+import { createOrganizationService } from "./organizations/service";
 
 const host = process.env.API_HOST ?? "0.0.0.0";
 const port = Number(process.env.API_PORT ?? 3001);
@@ -20,6 +22,9 @@ const database = new SQL(
 );
 const apiTokens = createApiTokenService(
   createPostgresApiTokenRepository(database)
+);
+const organizations = createOrganizationService(
+  createPostgresOrganizationRepository(database)
 );
 if (authProvider !== "email") {
   throw new Error(
@@ -41,6 +46,7 @@ const auth = createPostgresEmailAuthBackend({
 export const handleApiRequest = createApiHandler({
   webOrigin,
   apiTokens,
+  organizations,
   auth
 });
 

@@ -9,9 +9,13 @@ title: Services
 | Docs | `http://localhost:3003` | Product and engineering documentation |
 | PostgreSQL | `localhost:5432` | Local relational data store |
 
-The root page provides email registration and login, and `/account` is protected. The account page loads
-the current user from the REST API, provides logout, and manages scoped API
-tokens.
+`/sign-in` provides email registration and login, and `/home` is protected.
+The authenticated application loads the current user from the REST API, provides
+logout from the sidebar account menu, and manages scoped API tokens under
+`/settings/api-tokens`. The API creates the user's first organization during
+authenticated-session bootstrap and persists active-organization switching.
+Organization and Team settings expose administrator-authorized organization
+renaming and membership-role management.
 
 ## Health checks
 

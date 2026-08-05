@@ -22,8 +22,12 @@ export const apiOpenApiDocument = {
     { name: "System", description: "Service status endpoints." },
     { name: "Authentication", description: "User session lifecycle." },
     {
+      name: "Organizations",
+      description: "Organization membership and active workspace selection."
+    },
+    {
       name: "API Tokens",
-      description: "Scoped credentials owned by an authenticated user."
+      description: "Scoped credentials owned by an organization and user."
     }
   ],
   paths: {
@@ -303,11 +307,249 @@ export const apiOpenApiDocument = {
         }
       }
     },
+    [apiRoutes.organizationsList.path]: {
+      get: {
+        operationId: "listOrganizations",
+        summary: "List organizations",
+        description:
+          "Lists the current user's organizations and active organization. Creates the user's first organization when none exists.",
+        tags: ["Organizations"],
+        responses: {
+          "200": {
+            description: "Organization membership context.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/OrganizationContext" }
+              }
+            }
+          },
+          "401": errorResponse
+        }
+      },
+      post: {
+        operationId: "createOrganization",
+        summary: "Create an organization",
+        description:
+          "Creates an organization owned by the current user and makes it active.",
+        tags: ["Organizations"],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CreateOrganizationRequest" }
+            }
+          }
+        },
+        responses: {
+          "201": {
+            description: "The created organization is active.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/OrganizationContext" }
+              }
+            }
+          },
+          "400": {
+            description: "The organization request is invalid.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": errorResponse,
+          "403": {
+            description: "The request origin is not allowed.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    [apiRoutes.organizationsSwitch.path]: {
+      post: {
+        operationId: "switchOrganization",
+        summary: "Switch organizations",
+        description:
+          "Makes one of the current user's organization memberships active.",
+        tags: ["Organizations"],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/SwitchOrganizationRequest" }
+            }
+          }
+        },
+        responses: {
+          "200": {
+            description: "The selected organization is active.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/OrganizationContext" }
+              }
+            }
+          },
+          "400": {
+            description: "The organization identifier is invalid.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": errorResponse,
+          "403": {
+            description: "The user is not a member or the origin is not allowed.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    [apiRoutes.organizationUpdate.path]: {
+      patch: {
+        operationId: "updateCurrentOrganization",
+        summary: "Update the active organization",
+        description:
+          "Updates the active organization. The current user must be an owner or administrator.",
+        tags: ["Organizations"],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdateOrganizationRequest" }
+            }
+          }
+        },
+        responses: {
+          "200": {
+            description: "The active organization was updated.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/OrganizationContext" }
+              }
+            }
+          },
+          "400": {
+            description: "The organization request is invalid.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": errorResponse,
+          "403": {
+            description: "Administrator access is required or the origin is not allowed.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    [apiRoutes.organizationMembersList.path]: {
+      get: {
+        operationId: "listCurrentOrganizationMembers",
+        summary: "List active organization members",
+        description:
+          "Lists the user-to-organization memberships for the active organization.",
+        tags: ["Organizations"],
+        responses: {
+          "200": {
+            description: "Active organization members.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ListOrganizationMembersResponse"
+                }
+              }
+            }
+          },
+          "401": errorResponse,
+          "403": {
+            description: "Organization membership is required.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    [apiRoutes.organizationMemberUpdate.path]: {
+      patch: {
+        operationId: "updateCurrentOrganizationMemberRole",
+        summary: "Update an organization member role",
+        description:
+          "Updates a non-owner membership role. The current user must be an owner or administrator.",
+        tags: ["Organizations"],
+        parameters: [
+          {
+            name: "userId",
+            in: "path",
+            required: true,
+            schema: { type: "string", minLength: 1 }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/UpdateOrganizationMemberRoleRequest"
+              }
+            }
+          }
+        },
+        responses: {
+          "200": {
+            description: "The membership role was updated.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/UpdateOrganizationMemberRoleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            description: "The member or role is invalid.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": errorResponse,
+          "403": {
+            description:
+              "Administrator access is required, the owner role is immutable, or the origin is not allowed.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
     [apiRoutes.apiTokensList.path]: {
       get: {
         operationId: "listApiTokens",
         summary: "List API tokens",
-        description: "Lists the current user's active, unexpired API tokens.",
+        description:
+          "Lists active, unexpired API tokens for the current user and active organization.",
         tags: ["API Tokens"],
         responses: {
           "200": {
@@ -324,7 +566,8 @@ export const apiOpenApiDocument = {
       post: {
         operationId: "createApiToken",
         summary: "Create an API token",
-        description: "Creates a scoped API token and returns its secret once.",
+        description:
+          "Creates a scoped API token in the active organization and returns its secret once.",
         tags: ["API Tokens"],
         requestBody: {
           required: true,
@@ -387,7 +630,8 @@ export const apiOpenApiDocument = {
       delete: {
         operationId: "revokeApiToken",
         summary: "Revoke an API token",
-        description: "Immediately revokes one of the current user's API tokens.",
+        description:
+          "Immediately revokes one of the current user's API tokens in the active organization.",
         tags: ["API Tokens"],
         parameters: [
           {
@@ -417,7 +661,8 @@ export const apiOpenApiDocument = {
             }
           },
           "404": {
-            description: "The API token does not exist for the current user.",
+            description:
+              "The API token does not exist for the current user and active organization.",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/Error" }
@@ -478,6 +723,96 @@ export const apiOpenApiDocument = {
       ApiTokenScope: {
         type: "string",
         enum: apiTokenScopes
+      },
+      OrganizationRole: {
+        type: "string",
+        enum: ["owner", "admin", "member"]
+      },
+      OrganizationSummary: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "name", "role"],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          name: { type: "string", minLength: 1, maxLength: 100 },
+          role: { $ref: "#/components/schemas/OrganizationRole" }
+        }
+      },
+      OrganizationContext: {
+        type: "object",
+        additionalProperties: false,
+        required: ["activeOrganizationId", "organizations"],
+        properties: {
+          activeOrganizationId: { type: "string", format: "uuid" },
+          organizations: {
+            type: "array",
+            minItems: 1,
+            items: { $ref: "#/components/schemas/OrganizationSummary" }
+          }
+        }
+      },
+      CreateOrganizationRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name"],
+        properties: {
+          name: { type: "string", minLength: 1, maxLength: 100 }
+        }
+      },
+      SwitchOrganizationRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["organizationId"],
+        properties: {
+          organizationId: { type: "string", format: "uuid" }
+        }
+      },
+      UpdateOrganizationRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name"],
+        properties: {
+          name: { type: "string", minLength: 1, maxLength: 100 }
+        }
+      },
+      OrganizationMember: {
+        type: "object",
+        additionalProperties: false,
+        required: ["userId", "displayName", "email", "role"],
+        properties: {
+          userId: { type: "string", minLength: 1 },
+          displayName: { type: "string", minLength: 1 },
+          email: { type: ["string", "null"], format: "email" },
+          role: { $ref: "#/components/schemas/OrganizationRole" }
+        }
+      },
+      ListOrganizationMembersResponse: {
+        type: "object",
+        additionalProperties: false,
+        required: ["members"],
+        properties: {
+          members: {
+            type: "array",
+            minItems: 1,
+            items: { $ref: "#/components/schemas/OrganizationMember" }
+          }
+        }
+      },
+      UpdateOrganizationMemberRoleRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["role"],
+        properties: {
+          role: { type: "string", enum: ["admin", "member"] }
+        }
+      },
+      UpdateOrganizationMemberRoleResponse: {
+        type: "object",
+        additionalProperties: false,
+        required: ["member"],
+        properties: {
+          member: { $ref: "#/components/schemas/OrganizationMember" }
+        }
       },
       ApiTokenScopeDefinition: {
         type: "object",
@@ -601,9 +936,15 @@ export const apiOpenApiDocument = {
       AuthSession: {
         type: "object",
         additionalProperties: false,
-        required: ["user"],
+        required: ["user", "activeOrganizationId", "organizations"],
         properties: {
-          user: { $ref: "#/components/schemas/AuthUser" }
+          user: { $ref: "#/components/schemas/AuthUser" },
+          activeOrganizationId: { type: "string", format: "uuid" },
+          organizations: {
+            type: "array",
+            minItems: 1,
+            items: { $ref: "#/components/schemas/OrganizationSummary" }
+          }
         }
       },
       AuthTransitionResponse: {

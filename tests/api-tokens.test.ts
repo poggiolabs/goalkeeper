@@ -36,12 +36,15 @@ function createHarness() {
   };
 }
 
+const organizationId = "11111111-1111-4111-8111-111111111111";
+const otherOrganizationId = "22222222-2222-4222-8222-222222222222";
+
 describe("API token lifecycle", () => {
   test("returns a secret once and stores only its SHA-256 hash", async () => {
     const { repository, service } = createHarness();
-    const created = await service.create("user-1", {
+    const created = await service.create("user-1", organizationId, {
       name: "Automation",
-      scopes: ["goals:read:own", "goals:write:all"],
+      scopes: ["goals:read", "goals:write:all"],
       expiresInDays: 30
     });
 
@@ -49,7 +52,7 @@ describe("API token lifecycle", () => {
     expect(created.token).toMatchObject({
       name: "Automation",
       prefix: created.secret.slice(0, "gk_".length + 16),
-      scopes: ["goals:read:own", "goals:write:all"],
+      scopes: ["goals:read", "goals:write:all"],
       expiresAt: "2026-09-03T12:00:00.000Z"
     });
     expect(repository.records[0]?.tokenHash).toBe(
@@ -57,24 +60,24 @@ describe("API token lifecycle", () => {
     );
     expect(repository.records[0]?.tokenHash).not.toBe(created.secret);
 
-    const listed = await service.list("user-1");
+    const listed = await service.list("user-1", organizationId);
     expect(listed.tokens[0]?.id).toBe(created.token.id);
     expect(listed).not.toHaveProperty("secret");
   });
 
   test("uses a 90-day default and rejects invalid scope requests", async () => {
     const { service } = createHarness();
-    const created = await service.create("user-1", {
+    const created = await service.create("user-1", organizationId, {
       name: "Default lifetime",
-      scopes: ["goals:read:own"]
+      scopes: ["goals:read"]
     });
     expect(created.token.expiresAt).toBe("2026-11-02T12:00:00.000Z");
 
     await expect(
-      service.create("user-1", { name: "No scopes", scopes: [] })
+      service.create("user-1", organizationId, { name: "No scopes", scopes: [] })
     ).rejects.toMatchObject({ code: "invalid_api_token_scopes" });
     await expect(
-      service.create("user-1", {
+      service.create("user-1", organizationId, {
         name: "Unknown scope",
         scopes: ["admin:all"]
       })
@@ -84,7 +87,7 @@ describe("API token lifecycle", () => {
   test("resolves bearer credentials with a sessionless principal", async () => {
     const harness = createHarness();
     const { repository, service } = harness;
-    const created = await service.create("user-1", {
+    const created = await service.create("user-1", organizationId, {
       name: "Goal updater",
       scopes: ["goals:write:all"]
     });
@@ -98,6 +101,7 @@ describe("API token lifecycle", () => {
       kind: "apiToken",
       tokenId: created.token.id,
       userId: "user-1",
+      organizationId,
       sessionId: null,
       scopes: ["goals:write:all"]
     });
@@ -121,27 +125,41 @@ describe("API token lifecycle", () => {
 
   test("revocation, expiration, and owner isolation fail closed", async () => {
     const harness = createHarness();
-    const created = await harness.service.create("user-1", {
+    const created = await harness.service.create("user-1", organizationId, {
       name: "Temporary",
-      scopes: ["goals:read:own"],
+      scopes: ["goals:read"],
       expiresInDays: 1
     });
 
     await expect(
-      harness.service.revoke("user-2", created.token.id)
+      harness.service.revoke("user-2", organizationId, created.token.id)
     ).rejects.toMatchObject({ code: "api_token_not_found" });
     expect(await harness.service.resolve(created.secret)).not.toBeNull();
 
-    await harness.service.revoke("user-1", created.token.id);
+    await harness.service.revoke("user-1", organizationId, created.token.id);
     expect(await harness.service.resolve(created.secret)).toBeNull();
 
-    const expiring = await harness.service.create("user-1", {
+    const expiring = await harness.service.create("user-1", organizationId, {
       name: "Expiring",
-      scopes: ["goals:read:own"],
+      scopes: ["goals:read"],
       expiresInDays: 1
     });
     harness.setTime("2026-08-05T12:00:00.001Z");
     expect(await harness.service.resolve(expiring.secret)).toBeNull();
+  });
+
+  test("isolates token management by organization", async () => {
+    const { service } = createHarness();
+    const created = await service.create("user-1", organizationId, {
+      name: "Organization one",
+      scopes: ["goals:read"]
+    });
+
+    expect((await service.list("user-1", otherOrganizationId)).tokens).toEqual([]);
+    await expect(
+      service.revoke("user-1", otherOrganizationId, created.token.id)
+    ).rejects.toMatchObject({ code: "api_token_not_found" });
+    expect((await service.list("user-1", organizationId)).tokens).toHaveLength(1);
   });
 });
 
@@ -150,8 +168,9 @@ describe("API token authorization", () => {
     kind: "apiToken" as const,
     tokenId: crypto.randomUUID(),
     userId: "user-1",
+    organizationId,
     sessionId: null,
-    scopes: ["goals:read:own" as const]
+    scopes: ["goals:read" as const]
   };
 
   test("requires both the canonical scope and the owner's live authority", async () => {
@@ -159,7 +178,7 @@ describe("API token authorization", () => {
       authorizeApiToken(principal, "goals.read.own", () => true)
     ).resolves.toMatchObject({
       allowed: true,
-      acceptedScopes: ["goals:read:own", "goals:read:all"]
+      acceptedScopes: ["goals:read", "goals:read:all"]
     });
     await expect(
       authorizeApiToken(principal, "goals.write.own", () => true)
@@ -197,7 +216,7 @@ describe("API token authorization", () => {
 
 test("API token scopes stay aligned across the registry and OpenAPI", () => {
   expect(apiTokenScopeRegistry.map((scope) => scope.id)).toEqual(serviceScopes);
-  expect(defaultApiTokenScopes).toEqual(["goals:read:own"]);
+  expect(defaultApiTokenScopes).toEqual(["goals:read"]);
   expect(apiOpenApiDocument.components.schemas.ApiTokenScope.enum).toEqual(
     serviceScopes
   );

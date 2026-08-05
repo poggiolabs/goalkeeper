@@ -9,9 +9,12 @@ separate from browser sessions and from any access JWT accepted by a custom
 
 ## Lifecycle
 
-An authenticated user creates, lists, and revokes tokens from the protected
-account page or the `/v1/api-tokens` API. Creation returns the full secret once.
-Subsequent responses contain only its non-sensitive prefix and metadata.
+An authenticated user creates, lists, and revokes tokens from API Token settings
+at `/settings/api-tokens` or the `/v1/api-tokens` API. Creation
+returns the full secret once. Subsequent responses contain only its
+non-sensitive prefix and metadata. Listing, creation, and revocation are scoped
+to the user's active organization; switching organizations changes the token
+set shown by both the UI and API.
 
 The database stores a SHA-256 hash of a 256-bit random secret. Every token has a
 bounded expiry of 1–365 days, defaults to 90 days, and is checked for expiration
@@ -27,15 +30,16 @@ Every token has at least one scope:
 
 | Scope | Intended capability |
 | --- | --- |
-| `goals:read:own` | Read goals owned by the token owner |
-| `goals:write:own` | Create, update, or delete goals owned by the token owner |
+| `goals:read` | Read goals owned by the token owner |
+| `goals:write` | Create, update, or delete goals owned by the token owner |
 | `goals:read:all` | Read every goal visible to the token owner |
 | `goals:write:all` | Create, update, or delete every goal writable by the token owner |
 
 The API scope registry is the canonical source for identifiers, labels,
 defaults, and granted capabilities. `GET /v1/api-token-scopes` exposes its UI
-metadata. The token form initially selects only `goals:read:own` and requires at
-least one selected scope.
+metadata. The token form presents an asciibetically sorted list, supports fuzzy
+filtering by identifier and description, initially selects only `goals:read`,
+and requires at least one selected scope.
 
 All-goals scopes include the corresponding own-goals capability. Write scopes
 do not imply read access. `authorizeApiToken` denies capabilities absent from

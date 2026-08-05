@@ -9,6 +9,7 @@ import type {
 type ApiTokenRow = {
   id: string;
   owner_user_id: string;
+  organization_id: string | null;
   name: string;
   token_prefix: string;
   token_hash: string;
@@ -23,11 +24,12 @@ export function createPostgresApiTokenRepository(
   sql: SQL
 ): ApiTokenRepository {
   return {
-    async listActive(ownerUserId, now) {
+    async listActive(ownerUserId, organizationId, now) {
       const rows = await sql<ApiTokenRow[]>`
         select *
         from api_tokens
         where owner_user_id = ${ownerUserId}
+          and organization_id = ${organizationId}::uuid
           and revoked_at is null
           and expires_at > ${now}
         order by created_at desc
@@ -39,6 +41,7 @@ export function createPostgresApiTokenRepository(
       const [row] = await sql<ApiTokenRow[]>`
         insert into api_tokens (
           owner_user_id,
+          organization_id,
           name,
           token_prefix,
           token_hash,
@@ -47,6 +50,7 @@ export function createPostgresApiTokenRepository(
           created_at
         ) values (
           ${record.ownerUserId},
+          ${record.organizationId}::uuid,
           ${record.name},
           ${record.prefix},
           ${record.tokenHash},
@@ -65,6 +69,7 @@ export function createPostgresApiTokenRepository(
         select *
         from api_tokens
         where token_hash = ${tokenHash}
+          and organization_id is not null
           and revoked_at is null
           and expires_at > ${now}
         limit 1
@@ -72,12 +77,13 @@ export function createPostgresApiTokenRepository(
       return row ? toRecord(row) : null;
     },
 
-    async revoke(ownerUserId, tokenId, revokedAt) {
+    async revoke(ownerUserId, organizationId, tokenId, revokedAt) {
       const [row] = await sql<ApiTokenRow[]>`
         update api_tokens
         set revoked_at = coalesce(revoked_at, ${revokedAt})
         where id = ${tokenId}::uuid
           and owner_user_id = ${ownerUserId}
+          and organization_id = ${organizationId}::uuid
         returning *
       `;
       return row ? toRecord(row) : null;
@@ -255,6 +261,161 @@ export async function migrateApiDatabase(sql: SQL): Promise<void> {
         values ('003_goal_token_scopes')
       `;
     }
+
+    const organizationsApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '004_organizations'
+    `;
+    if (organizationsApplied.length === 0) {
+      await transaction`
+        create table organizations (
+          id uuid primary key default gen_random_uuid(),
+          name text not null,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now(),
+          constraint organizations_name_length_check
+            check (char_length(name) between 1 and 100)
+        )
+      `;
+      await transaction`
+        create table organization_memberships (
+          id uuid primary key default gen_random_uuid(),
+          organization_id uuid not null references organizations(id) on delete cascade,
+          user_id text not null,
+          role text not null,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now(),
+          constraint organization_memberships_role_check check (role in ('owner')),
+          unique (organization_id, user_id)
+        )
+      `;
+      await transaction`
+        create index organization_memberships_user_created_idx
+        on organization_memberships(user_id, created_at asc)
+      `;
+      await transaction`
+        create table organization_preferences (
+          user_id text primary key,
+          active_organization_id uuid not null references organizations(id) on delete cascade,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now()
+        )
+      `;
+      await transaction`
+        alter table api_tokens
+        add column organization_id uuid references organizations(id) on delete cascade
+      `;
+      const legacyTokenOwners = await transaction<
+        Array<{ owner_user_id: string; display_name: string | null }>
+      >`
+        select distinct t.owner_user_id, u.display_name
+        from api_tokens t
+        left join auth_users u on u.id::text = t.owner_user_id
+      `;
+      for (const owner of legacyTokenOwners) {
+        const [organization] = await transaction<{ id: string }[]>`
+          insert into organizations (name)
+          values (${owner.display_name ?? "Personal organization"})
+          returning id
+        `;
+        if (!organization) {
+          throw new Error("Organization backfill did not return a record");
+        }
+        await transaction`
+          insert into organization_memberships (organization_id, user_id, role)
+          values (${organization.id}::uuid, ${owner.owner_user_id}, 'owner')
+        `;
+        await transaction`
+          insert into organization_preferences (user_id, active_organization_id)
+          values (${owner.owner_user_id}, ${organization.id}::uuid)
+        `;
+        await transaction`
+          update api_tokens
+          set organization_id = ${organization.id}::uuid
+          where owner_user_id = ${owner.owner_user_id}
+        `;
+      }
+      await transaction`
+        alter table api_tokens alter column organization_id set not null
+      `;
+      await transaction`
+        create index api_tokens_organization_owner_created_idx
+        on api_tokens(organization_id, owner_user_id, created_at desc)
+      `;
+      await transaction`
+        insert into api_schema_migrations (id) values ('004_organizations')
+      `;
+    }
+
+    const membershipRolesApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '005_membership_roles'
+    `;
+    if (membershipRolesApplied.length === 0) {
+      await transaction`
+        alter table organization_memberships
+        add column display_name text,
+        add column email text
+      `;
+      await transaction`
+        update organization_memberships m
+        set display_name = coalesce(u.display_name, m.user_id),
+            email = u.email
+        from auth_users u
+        where u.id::text = m.user_id
+      `;
+      await transaction`
+        update organization_memberships
+        set display_name = user_id
+        where display_name is null
+      `;
+      await transaction`
+        alter table organization_memberships
+        alter column display_name set not null,
+        drop constraint organization_memberships_role_check,
+        add constraint organization_memberships_role_check
+          check (role in ('owner', 'admin', 'member'))
+      `;
+      await transaction`
+        create index organization_memberships_organization_role_idx
+        on organization_memberships(organization_id, role, created_at asc)
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('005_membership_roles')
+      `;
+    }
+
+    const namespaceScopesApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '006_namespace_scopes'
+    `;
+    if (namespaceScopesApplied.length === 0) {
+      await transaction`
+        alter table api_tokens
+        drop constraint if exists api_tokens_scopes_supported_check
+      `;
+      await transaction`
+        update api_tokens
+        set scopes = array_replace(
+          array_replace(scopes, 'goals:read:own', 'goals:read'),
+          'goals:write:own',
+          'goals:write'
+        )
+        where scopes && array['goals:read:own', 'goals:write:own']::text[]
+      `;
+      await transaction`
+        alter table api_tokens
+        add constraint api_tokens_scopes_supported_check
+        check (scopes <@ array[
+          'goals:read',
+          'goals:write',
+          'goals:read:all',
+          'goals:write:all'
+        ]::text[])
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('006_namespace_scopes')
+      `;
+    }
   });
 }
 
@@ -262,6 +423,7 @@ function toRecord(row: ApiTokenRow): ApiTokenRecord {
   return {
     id: row.id,
     ownerUserId: row.owner_user_id,
+    organizationId: requiredOrganizationId(row),
     name: row.name,
     prefix: row.token_prefix,
     tokenHash: row.token_hash,
@@ -271,6 +433,13 @@ function toRecord(row: ApiTokenRow): ApiTokenRecord {
     revokedAt: row.revoked_at ? toDate(row.revoked_at) : null,
     createdAt: toDate(row.created_at)
   };
+}
+
+function requiredOrganizationId(row: ApiTokenRow): string {
+  if (!row.organization_id) {
+    throw new Error(`API token ${row.id} is missing its organization`);
+  }
+  return row.organization_id;
 }
 
 function toDate(value: Date | string): Date {

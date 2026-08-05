@@ -19,6 +19,15 @@ export class MemoryEmailAuthBackend implements EmailAuthBackend {
 
   constructor(private readonly webOrigin: string) {}
 
+  invalidSessionHeaders(request: Request) {
+    return request.headers.get("cookie")?.includes("test_session=")
+      ? {
+          "set-cookie":
+            "test_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0"
+        }
+      : undefined;
+  }
+
   addVerifiedUser(input: {
     email: string;
     password: string;
@@ -105,7 +114,7 @@ export class MemoryEmailAuthBackend implements EmailAuthBackend {
     const secret = request.headers.get("cookie")?.match(/test_session=([^;]+)/)?.[1];
     if (secret) this.sessions.delete(secret);
     return {
-      redirectTo: `${this.webOrigin}/`,
+      redirectTo: `${this.webOrigin}/sign-in`,
       headers: {
         "set-cookie": "test_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0"
       }

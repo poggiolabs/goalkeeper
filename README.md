@@ -64,9 +64,9 @@ documentation site.
 
 ## Authentication
 
-Open <http://localhost:3000/account> to exercise the local authentication flow.
-Local development uses the built-in PostgreSQL email provider. Register from the
-root page, then open and confirm the verification link logged by the API or run
+Open <http://localhost:3000> to exercise the local authentication flow.
+Local development uses the built-in PostgreSQL email provider. Register from
+`/sign-in`, then open and confirm the verification link logged by the API or run
 `bun run auth:verify-email -- user@example.com`.
 
 Self-hosted operators can replace the built-in implementation by supplying an
@@ -75,11 +75,20 @@ Self-hosted operators can replace the built-in implementation by supplying an
 `email` fields. Provider-specific claims and SDK types remain behind that
 interface.
 
-The account page also manages scoped API tokens. Token secrets are returned
-once, stored only as SHA-256 hashes, expire after a bounded lifetime, and can be
-revoked immediately. Available scopes distinguish access to the token owner's
-goals from access to all goals: `goals:read:own`, `goals:write:own`,
+The authenticated app opens at `/home`. API tokens are managed at
+`/settings/api-tokens`, while logout is available from the account menu in the
+sidebar. The first authenticated session creates
+an organization named after the user; the same menu creates and switches
+organizations. API tokens belong to the active organization. Token secrets are
+returned once, stored only as SHA-256 hashes, expire after a bounded lifetime,
+and can be revoked immediately. Available scopes distinguish access to the
+token owner's goals from access to all goals: `goals:read`, `goals:write`,
 `goals:read:all`, and `goals:write:all`.
+
+Organization owners and administrators can rename the active organization at
+`/settings/organization` and manage existing member roles at `/settings/team`.
+Memberships model the N:M relationship between users and organizations;
+invitations are not implemented yet.
 
 ## License
 

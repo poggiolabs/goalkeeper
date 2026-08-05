@@ -1,13 +1,13 @@
 export const apiTokenScopeRegistry = [
   {
-    id: "goals:read:own",
+    id: "goals:read",
     label: "Read my goals",
     description: "Read goals owned by the token owner.",
     default: true,
     capabilities: ["goals.read.own"]
   },
   {
-    id: "goals:write:own",
+    id: "goals:write",
     label: "Write my goals",
     description: "Create, update, and delete goals owned by the token owner.",
     default: false,
@@ -63,6 +63,7 @@ export type ApiTokenPrincipal = {
   kind: "apiToken";
   tokenId: string;
   userId: string;
+  organizationId: string;
   sessionId: null;
   scopes: ApiTokenScope[];
 };
@@ -70,6 +71,7 @@ export type ApiTokenPrincipal = {
 export type ApiTokenRecord = {
   id: string;
   ownerUserId: string;
+  organizationId: string;
   name: string;
   prefix: string;
   tokenHash: string;
@@ -86,11 +88,16 @@ export type NewApiTokenRecord = Omit<
 >;
 
 export interface ApiTokenRepository {
-  listActive(ownerUserId: string, now: Date): Promise<ApiTokenRecord[]>;
+  listActive(
+    ownerUserId: string,
+    organizationId: string,
+    now: Date
+  ): Promise<ApiTokenRecord[]>;
   insert(record: NewApiTokenRecord): Promise<ApiTokenRecord>;
   findActiveByHash(tokenHash: string, now: Date): Promise<ApiTokenRecord | null>;
   revoke(
     ownerUserId: string,
+    organizationId: string,
     tokenId: string,
     revokedAt: Date
   ): Promise<ApiTokenRecord | null>;

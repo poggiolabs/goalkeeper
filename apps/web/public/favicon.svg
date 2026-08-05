@@ -1,0 +1,16 @@
+<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .background { fill: #e4ece5; }
+    .target { stroke: #1d6d40; }
+    @media (prefers-color-scheme: dark) {
+      .background { fill: #1a261a; }
+      .target { stroke: #6aad75; }
+    }
+  </style>
+  <circle class="background" cx="40" cy="40" r="37" />
+  <g class="target" fill="none" stroke-width="3.2">
+    <circle cx="40" cy="40" r="17.5" />
+    <circle cx="40" cy="40" r="10" />
+    <circle cx="40" cy="40" r="3.75" />
+  </g>
+</svg>

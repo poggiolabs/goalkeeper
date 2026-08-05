@@ -6,6 +6,28 @@ export type AuthUser = {
 
 export type AuthSession = {
   user: AuthUser;
+  activeOrganizationId: string;
+  organizations: OrganizationSummary[];
+};
+
+export type OrganizationSummary = {
+  id: string;
+  name: string;
+  role: OrganizationRole;
+};
+
+export type OrganizationRole = "owner" | "admin" | "member";
+
+export type OrganizationMember = {
+  userId: string;
+  displayName: string;
+  email: string | null;
+  role: OrganizationRole;
+};
+
+export type OrganizationContext = {
+  activeOrganizationId: string;
+  organizations: OrganizationSummary[];
 };
 
 export type AuthConfiguration = {
@@ -33,6 +55,13 @@ export type ApiToken = {
 };
 
 export class UnauthorizedError extends Error {}
+
+const unauthorizedListeners = new Set<() => void>();
+
+export function subscribeToAuthUnauthorized(listener: () => void): () => void {
+  unauthorizedListeners.add(listener);
+  return () => unauthorizedListeners.delete(listener);
+}
 
 export function loginUrl(apiUrl: string, returnTo: string): string {
   const url = new URL("/v1/auth/login", apiUrl);
@@ -106,7 +135,7 @@ export async function getAuthSession(
   });
 
   if (response.status === 401) {
-    throw new UnauthorizedError("Authentication is required.");
+    throw unauthorizedError();
   }
 
   if (!response.ok) {
@@ -128,6 +157,83 @@ export async function logout(apiUrl: string): Promise<string> {
 
   const result = (await response.json()) as { redirectTo: string };
   return result.redirectTo;
+}
+
+export async function createOrganization(
+  apiUrl: string,
+  name: string
+): Promise<OrganizationContext> {
+  const response = await fetch(new URL("/v1/organizations", apiUrl), {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name })
+  });
+  await assertApiResponse(response, "Unable to create organization.");
+  return response.json() as Promise<OrganizationContext>;
+}
+
+export async function switchOrganization(
+  apiUrl: string,
+  organizationId: string
+): Promise<OrganizationContext> {
+  const response = await fetch(new URL("/v1/organizations/switch", apiUrl), {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ organizationId })
+  });
+  await assertApiResponse(response, "Unable to switch organization.");
+  return response.json() as Promise<OrganizationContext>;
+}
+
+export async function updateOrganizationName(
+  apiUrl: string,
+  name: string
+): Promise<OrganizationContext> {
+  const response = await fetch(new URL("/v1/organizations/current", apiUrl), {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name })
+  });
+  await assertApiResponse(response, "Unable to update organization.");
+  return response.json() as Promise<OrganizationContext>;
+}
+
+export async function listOrganizationMembers(
+  apiUrl: string,
+  signal?: AbortSignal
+): Promise<OrganizationMember[]> {
+  const response = await fetch(
+    new URL("/v1/organizations/current/members", apiUrl),
+    { credentials: "include", signal }
+  );
+  await assertApiResponse(response, "Unable to load organization members.");
+  const result = (await response.json()) as { members: OrganizationMember[] };
+  return result.members;
+}
+
+export async function updateOrganizationMemberRole(
+  apiUrl: string,
+  userId: string,
+  role: Exclude<OrganizationRole, "owner">
+): Promise<OrganizationMember> {
+  const response = await fetch(
+    new URL(
+      `/v1/organizations/current/members/${encodeURIComponent(userId)}`,
+      apiUrl
+    ),
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role })
+    }
+  );
+  await assertApiResponse(response, "Unable to update member role.");
+  const result = (await response.json()) as { member: OrganizationMember };
+  return result.member;
 }
 
 export async function listApiTokens(
@@ -192,7 +298,7 @@ async function assertApiResponse(
   sessionRequired = true
 ): Promise<void> {
   if (sessionRequired && response.status === 401) {
-    throw new UnauthorizedError("Authentication is required.");
+    throw unauthorizedError();
   }
   if (response.ok) return;
 
@@ -202,4 +308,9 @@ async function assertApiResponse(
   throw new Error(
     typeof body?.message === "string" ? body.message : fallbackMessage
   );
+}
+
+function unauthorizedError(): UnauthorizedError {
+  for (const listener of unauthorizedListeners) listener();
+  return new UnauthorizedError("Authentication is required.");
 }

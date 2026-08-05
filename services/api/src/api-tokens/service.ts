@@ -62,19 +62,24 @@ export function createApiTokenService(
       kind: "apiToken",
       tokenId: record.id,
       userId: record.ownerUserId,
+      organizationId: record.organizationId,
       sessionId: null,
       scopes: record.scopes
     };
   }
 
   return {
-    async list(ownerUserId: string): Promise<{ tokens: ApiToken[] }> {
-      const records = await repository.listActive(ownerUserId, now());
+    async list(
+      ownerUserId: string,
+      organizationId: string
+    ): Promise<{ tokens: ApiToken[] }> {
+      const records = await repository.listActive(ownerUserId, organizationId, now());
       return { tokens: records.map(toApiToken) };
     },
 
     async create(
       ownerUserId: string,
+      organizationId: string,
       request: unknown
     ): Promise<{ token: ApiToken; secret: string }> {
       const input = normalizeCreateRequest(request);
@@ -88,6 +93,7 @@ export function createApiTokenService(
 
       const record = await repository.insert({
         ownerUserId,
+        organizationId,
         name: input.name,
         prefix,
         tokenHash: await hashToken(secret),
@@ -101,13 +107,19 @@ export function createApiTokenService(
 
     async revoke(
       ownerUserId: string,
+      organizationId: string,
       tokenId: string
     ): Promise<{ token: ApiToken }> {
       if (!tokenIdPattern.test(tokenId)) {
         throw new ApiTokenError("api_token_not_found", "API token not found", 404);
       }
 
-      const record = await repository.revoke(ownerUserId, tokenId, now());
+      const record = await repository.revoke(
+        ownerUserId,
+        organizationId,
+        tokenId,
+        now()
+      );
       if (!record) {
         throw new ApiTokenError("api_token_not_found", "API token not found", 404);
       }
@@ -127,7 +139,11 @@ export function createApiTokenService(
 export async function authorizeApiToken(
   principal: ApiTokenPrincipal,
   action: string,
-  ownerAllows: (userId: string, action: string) => boolean | Promise<boolean>
+  ownerAllows: (
+    userId: string,
+    organizationId: string,
+    action: string
+  ) => boolean | Promise<boolean>
 ) {
   const acceptedScopes = apiTokenScopeRegistry
     .filter((scope) =>
@@ -148,7 +164,7 @@ export async function authorizeApiToken(
       403
     );
   }
-  if (!(await ownerAllows(principal.userId, action))) {
+  if (!(await ownerAllows(principal.userId, principal.organizationId, action))) {
     throw new ApiTokenError(
       "permission_denied",
       "The token owner cannot access this operation",

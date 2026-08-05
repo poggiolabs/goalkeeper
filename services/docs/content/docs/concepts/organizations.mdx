@@ -1,0 +1,43 @@
+---
+title: Organizations
+description: Membership, bootstrap, and active workspace selection.
+---
+
+Organizations isolate shared workspace state. Every authenticated user has at
+least one organization and an `owner` membership. Users and organizations have
+an N:M relationship represented by persistent membership records. Membership
+roles are `owner`, `admin`, and `member`.
+
+## First-session bootstrap
+
+`GET /v1/auth/session` and `GET /v1/organizations` ensure an organization
+context exists. If the user has no memberships, Goalkeeper creates exactly one
+organization named after the user's current display name and makes it active.
+The bootstrap is serialized per user so concurrent first-session requests do
+not create duplicates.
+
+## Browser contract
+
+| Route | Purpose |
+| --- | --- |
+| `GET /v1/organizations` | List memberships and the active organization |
+| `POST /v1/organizations` | Create and activate an owned organization |
+| `POST /v1/organizations/switch` | Activate an organization after membership validation |
+| `PATCH /v1/organizations/current` | Rename the active organization as an owner or admin |
+| `GET /v1/organizations/current/members` | List active-organization memberships |
+| `PATCH /v1/organizations/current/members/{userId}` | Change a non-owner role as an owner or admin |
+
+Organization mutations require an authenticated browser session and the
+configured same-origin `Origin` header. Switching to an organization without a
+membership fails with `403 membership_not_found` and preserves the current
+selection.
+
+Organization owners and administrators can rename the active organization and
+change existing non-owner roles between `admin` and `member`. Owner roles are
+immutable through the role-management endpoint. Invitations are intentionally
+not implemented yet. The browser exposes these operations under
+`/settings/organization` and `/settings/team`.
+
+The active organization scopes organization-owned UI and API tokens. Existing
+tokens created before organization support are assigned to the user's first
+organization during bootstrap.

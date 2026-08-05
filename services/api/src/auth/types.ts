@@ -29,6 +29,7 @@ export interface AuthBackend {
   beginLogin(input: AuthTransitionInput): Promise<AuthTransition>;
   completeLogin(input: AuthTransitionInput): Promise<AuthTransition>;
   logout(request: Request): Promise<AuthTransition>;
+  invalidSessionHeaders?(request: Request): HeadersInit | undefined;
 }
 
 export type EmailRegistration = {
