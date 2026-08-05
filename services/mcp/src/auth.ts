@@ -24,12 +24,12 @@ export type McpOAuthIdentity = {
 
 export interface McpOAuthProvider {
   /**
-   * Validated authorization-server metadata. A registration endpoint is
-   * required because Goalkeeper advertises DCR support through the provider.
+   * Validated authorization-server metadata. Registration may use CIMD, DCR,
+   * or a client that was registered out of band.
    */
   readonly metadata: OAuthMetadata & {
     issuer: string;
-    registration_endpoint: string;
+    registration_endpoint?: string;
   };
   /**
    * Validate signature or introspection state, issuer, expiry, and the exact
@@ -54,7 +54,10 @@ export function createMcpTokenVerifier(input: {
   resource: URL;
   oauthProvider?: McpOAuthProvider;
 }): OAuthTokenVerifier {
-  const canonicalResource = canonicalResourceUrl(input.resource);
+  const canonicalResource = validateMcpResourceUrl(
+    input.resource,
+    "MCP resource URL"
+  );
 
   return {
     async verifyAccessToken(token): Promise<AuthInfo> {
@@ -197,11 +200,13 @@ export function assertOAuthProviderConfiguration(
     "issuer",
     dangerouslyAllowInsecureIssuerUrl
   );
-  assertSecureOAuthUrl(
-    provider.metadata.registration_endpoint,
-    "dynamic registration endpoint",
-    dangerouslyAllowInsecureIssuerUrl
-  );
+  if (provider.metadata.registration_endpoint) {
+    assertSecureOAuthUrl(
+      provider.metadata.registration_endpoint,
+      "dynamic registration endpoint",
+      dangerouslyAllowInsecureIssuerUrl
+    );
+  }
 }
 
 function assertSecureOAuthUrl(
@@ -232,15 +237,44 @@ function assertSecureOAuthUrl(
   }
 }
 
-function canonicalResourceUrl(resource: URL): URL {
-  const canonical = new URL(resource);
-  canonical.hash = "";
-  return canonical;
+export function validateMcpResourceUrl(
+  value: string | URL,
+  label = "PUBLIC_MCP_URL"
+): URL {
+  let resource: URL;
+  try {
+    resource = new URL(value);
+  } catch {
+    throw new Error(`${label} must be a valid absolute URL`);
+  }
+
+  if (resource.hash) {
+    throw new Error(`${label} must not contain a fragment`);
+  }
+  if (resource.username || resource.password) {
+    throw new Error(`${label} must not contain credentials`);
+  }
+
+  const isLoopback =
+    resource.hostname === "localhost" ||
+    resource.hostname === "127.0.0.1" ||
+    resource.hostname === "[::1]" ||
+    resource.hostname === "::1";
+  if (
+    resource.protocol !== "https:" &&
+    !(resource.protocol === "http:" && isLoopback)
+  ) {
+    throw new Error(`${label} must use HTTPS outside loopback development`);
+  }
+
+  return resource;
 }
 
 function matchesResource(candidate: string, expected: URL): boolean {
   try {
-    return canonicalResourceUrl(new URL(candidate)).href === expected.href;
+    return (
+      validateMcpResourceUrl(candidate, "OAuth resource").href === expected.href
+    );
   } catch {
     return false;
   }

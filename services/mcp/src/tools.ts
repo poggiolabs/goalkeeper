@@ -4,8 +4,8 @@ import {
   type CallToolResult
 } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
-import { ApiTokenError } from "../../api/src/api-tokens/service";
 import { apiTokenScopes } from "../../api/src/api-tokens/types";
+import { resolveScopedGoalAccess } from "../../api/src/goals/access";
 import {
   GoalError,
   type GoalAccess,
@@ -290,41 +290,19 @@ async function resolveAccess(
   operation: "read" | "write"
 ): Promise<GoalAccess> {
   const principal = principalFromAuthInfo(input.authInfo);
-  const role = await input.organizations.roleForUser(
-    principal.userId,
-    principal.organizationId
-  );
-  if (!role) {
-    throw new ApiTokenError(
-      "permission_denied",
-      "The authenticated user is no longer an organization member",
-      403
-    );
-  }
-  const ownScope = `goals:${operation}`;
-  const allScope = `${ownScope}:all`;
-  if (
-    !input.authInfo.scopes.includes(ownScope) &&
-    !input.authInfo.scopes.includes(allScope)
-  ) {
-    throw new ApiTokenError(
-      "insufficient_scope",
-      `This tool requires ${ownScope} or ${allScope}`,
-      403
-    );
-  }
-  return {
-    userId: principal.userId,
-    organizationId: principal.organizationId,
-    readAll: operation === "read" && input.authInfo.scopes.includes(allScope),
-    writeAll:
-      operation === "write" &&
-      input.authInfo.scopes.includes(allScope) &&
-      (role === "owner" || role === "admin"),
-    actor: principal.actor,
-    authentication: principal.authentication,
-    clientInfo: clientInfoFrom(server)
-  };
+  return resolveScopedGoalAccess({
+    principal: {
+      userId: principal.userId,
+      organizationId: principal.organizationId,
+      scopes: input.authInfo.scopes,
+      actor: principal.actor,
+      authentication: principal.authentication,
+      clientInfo: clientInfoFrom(server)
+    },
+    operation,
+    roleForUser: (userId, organizationId) =>
+      input.organizations.roleForUser(userId, organizationId)
+  });
 }
 
 function clientInfoFrom(server: McpServer): GoalClientInfo | null {
@@ -344,7 +322,7 @@ async function runTool(operation: () => Promise<unknown>): Promise<CallToolResul
       structuredContent
     };
   } catch (error) {
-    if (error instanceof GoalError || error instanceof ApiTokenError) {
+    if (error instanceof GoalError) {
       const structuredContent = {
         error: error.code,
         message: error.message,

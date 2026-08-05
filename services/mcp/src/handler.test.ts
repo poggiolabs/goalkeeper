@@ -31,9 +31,9 @@ async function createHarness() {
     apiTokens,
     goals,
     organizations,
-    publicMcpUrl: "http://mcp.test/mcp",
+    publicMcpUrl: "https://mcp.test/mcp",
     allowedHosts: ["mcp.test"],
-    allowedOrigins: ["http://mcp.test"]
+    allowedOrigins: ["https://mcp.test"]
   });
   return {
     apiTokens,
@@ -72,7 +72,7 @@ describe("Goalkeeper MCP server", () => {
       { versionNegotiation: { mode: "auto" } }
     );
     const transport = new StreamableHTTPClientTransport(
-      new URL("http://mcp.test/mcp"),
+      new URL("https://mcp.test/mcp"),
       {
         authProvider: { token: async () => token.secret },
         fetch: (input, init) => fetchThrough(harness.handler, input, init)
@@ -190,7 +190,7 @@ describe("Goalkeeper MCP server", () => {
       { versionNegotiation: { mode: "auto" } }
     );
     const transport = new StreamableHTTPClientTransport(
-      new URL("http://mcp.test/mcp"),
+      new URL("https://mcp.test/mcp"),
       {
         authProvider: { token: async () => token.secret },
         fetch: (input, init) => fetchThrough(harness.handler, input, init)
@@ -210,7 +210,7 @@ describe("Goalkeeper MCP server", () => {
     }
   });
 
-  test("publishes RFC 9728 and provider DCR discovery metadata", async () => {
+  test("publishes least-privilege RFC 9728 metadata and OAuth challenges", async () => {
     const harness = await createHarness();
     const oauthProvider: McpOAuthProvider = {
       metadata: {
@@ -243,12 +243,7 @@ describe("Goalkeeper MCP server", () => {
     expect(await protectedMetadata.json()).toMatchObject({
       resource: "https://mcp.example.com/mcp",
       authorization_servers: ["https://auth.example.com"],
-      scopes_supported: [
-        "goals:read",
-        "goals:write",
-        "goals:read:all",
-        "goals:write:all"
-      ]
+      scopes_supported: ["goals:read"]
     });
 
     const authorizationMetadata = await handler.fetch(
@@ -256,11 +251,7 @@ describe("Goalkeeper MCP server", () => {
         "https://mcp.example.com/.well-known/oauth-authorization-server"
       )
     );
-    expect(await authorizationMetadata.json()).toMatchObject({
-      issuer: "https://auth.example.com",
-      registration_endpoint: "https://auth.example.com/register",
-      client_id_metadata_document_supported: true
-    });
+    expect(authorizationMetadata.status).toBe(404);
 
     const unauthorized = await handler.fetch(
       new Request("https://mcp.example.com/mcp", {
@@ -290,12 +281,16 @@ describe("Goalkeeper MCP server", () => {
     expect(unauthorized.headers.get("www-authenticate")).toContain(
       'resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/mcp"'
     );
+    expect(unauthorized.headers.get("www-authenticate")).toContain(
+      'scope="goals:read"'
+    );
     await handler.close();
     await harness.handler.close();
   });
 
-  test("rejects an OAuth identity issued for another resource", async () => {
+  test("rejects OAuth identities for another or non-canonical resource", async () => {
     const harness = await createHarness();
+    let tokenResource = "https://other.example.com/mcp";
     const oauthProvider: McpOAuthProvider = {
       metadata: {
         issuer: "https://auth.example.com",
@@ -312,7 +307,7 @@ describe("Goalkeeper MCP server", () => {
           clientId: "test-client",
           scopes: ["goals:read"],
           expiresAt: Math.floor(Date.now() / 1000) + 3600,
-          resource: "https://other.example.com/mcp"
+          resource: tokenResource
         };
       }
     };
@@ -323,7 +318,7 @@ describe("Goalkeeper MCP server", () => {
       publicMcpUrl: "https://mcp.example.com/mcp",
       oauthProvider
     });
-    const response = await handler.fetch(
+    const request = () =>
       new Request("https://mcp.example.com/mcp", {
         method: "POST",
         headers: {
@@ -346,9 +341,10 @@ describe("Goalkeeper MCP server", () => {
             }
           }
         })
-      })
-    );
-    expect(response.status).toBe(401);
+      });
+    expect((await handler.fetch(request())).status).toBe(401);
+    tokenResource = "https://mcp.example.com/mcp#other";
+    expect((await handler.fetch(request())).status).toBe(401);
     await handler.close();
     await harness.handler.close();
   });
@@ -445,5 +441,59 @@ describe("Goalkeeper MCP server", () => {
       await handler.close();
       await harness.handler.close();
     }
+  });
+
+  test("matches configured origins exactly", async () => {
+    const harness = await createHarness();
+    const body = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "server/discover",
+      params: {}
+    });
+
+    const accepted = await harness.handler.fetch(
+      new Request("https://mcp.test/mcp", {
+        method: "POST",
+        headers: {
+          host: "mcp.test",
+          origin: "https://mcp.test",
+          "content-type": "application/json"
+        },
+        body
+      })
+    );
+    expect(accepted.status).toBe(401);
+
+    for (const origin of [
+      "http://mcp.test",
+      "https://mcp.test:8443",
+      "https://mcp.test/path",
+      "https://other.example.com"
+    ]) {
+      const rejected = await harness.handler.fetch(
+        new Request("https://mcp.test/mcp", {
+          method: "POST",
+          headers: {
+            host: "mcp.test",
+            origin,
+            "content-type": "application/json"
+          },
+          body
+        })
+      );
+      expect(rejected.status).toBe(403);
+    }
+
+    expect(() =>
+      createGoalkeeperMcpHandler({
+        apiTokens: harness.apiTokens,
+        goals: harness.goals,
+        organizations: harness.organizations,
+        publicMcpUrl: "https://mcp.test/mcp",
+        allowedOrigins: ["https://mcp.test/path"]
+      })
+    ).toThrow("MCP allowed origins must be origins");
+    await harness.handler.close();
   });
 });

@@ -1,19 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import {
   assertOAuthProviderConfiguration,
+  validateMcpResourceUrl,
   type McpOAuthProvider
 } from "./auth";
 
 function provider(
   issuer: string,
-  registrationEndpoint: string
+  registrationEndpoint?: string
 ): McpOAuthProvider {
   return {
     metadata: {
       issuer,
       authorization_endpoint: `${issuer}/authorize`,
       token_endpoint: `${issuer}/token`,
-      registration_endpoint: registrationEndpoint,
+      ...(registrationEndpoint
+        ? { registration_endpoint: registrationEndpoint }
+        : {}),
       response_types_supported: ["code"],
       code_challenge_methods_supported: ["S256"]
     },
@@ -64,5 +67,47 @@ describe("MCP OAuth provider configuration", () => {
         true
       )
     ).not.toThrow();
+  });
+
+  test("permits providers that use CIMD or pre-registered clients instead of DCR", () => {
+    expect(() =>
+      assertOAuthProviderConfiguration(
+        provider("https://auth.example.com"),
+        false
+      )
+    ).not.toThrow();
+  });
+});
+
+describe("MCP resource identifiers", () => {
+  test("requires HTTPS except for explicit loopback development", () => {
+    expect(validateMcpResourceUrl("https://mcp.example.com/mcp").href).toBe(
+      "https://mcp.example.com/mcp"
+    );
+    expect(validateMcpResourceUrl("http://localhost:3001/mcp").href).toBe(
+      "http://localhost:3001/mcp"
+    );
+    expect(validateMcpResourceUrl("http://127.0.0.1:3001/mcp").href).toBe(
+      "http://127.0.0.1:3001/mcp"
+    );
+    expect(validateMcpResourceUrl("http://[::1]:3001/mcp").href).toBe(
+      "http://[::1]:3001/mcp"
+    );
+
+    expect(() =>
+      validateMcpResourceUrl("http://mcp.example.com/mcp")
+    ).toThrow("must use HTTPS outside loopback development");
+    expect(() => validateMcpResourceUrl("ftp://localhost/mcp")).toThrow(
+      "must use HTTPS outside loopback development"
+    );
+  });
+
+  test("rejects fragments and embedded credentials", () => {
+    expect(() =>
+      validateMcpResourceUrl("https://mcp.example.com/mcp#other")
+    ).toThrow("must not contain a fragment");
+    expect(() =>
+      validateMcpResourceUrl("https://user:secret@mcp.example.com/mcp")
+    ).toThrow("must not contain credentials");
   });
 });

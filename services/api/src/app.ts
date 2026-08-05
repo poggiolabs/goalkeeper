@@ -6,7 +6,6 @@ import {
 } from "./auth/types";
 import {
   ApiTokenError,
-  authorizeApiToken,
   type ApiTokenService
 } from "./api-tokens/service";
 import { apiTokenScopeRegistry } from "./api-tokens/types";
@@ -15,6 +14,7 @@ import {
   type GoalAccess,
   type GoalService
 } from "./goals/service";
+import { resolveScopedGoalAccess } from "./goals/access";
 import {
   OrganizationError,
   type OrganizationService
@@ -614,30 +614,20 @@ async function resolveGoalAccess(
     if (!principal) {
       throw new ApiTokenError("invalid_api_token", "Invalid API token", 401);
     }
-    const role = await dependencies.organizations.roleForUser(
-      principal.userId,
-      principal.organizationId
-    );
-    const allScope = `goals:${operation}:all` as const;
-    const canUseAll =
-      principal.scopes.includes(allScope) &&
-      (operation === "read" || role === "owner" || role === "admin");
-    const action = canUseAll
-      ? `goals.${operation}.all`
-      : `goals.${operation}.own`;
-    await authorizeApiToken(principal, action, () => {
-      return role !== null;
-    });
     return {
-      access: {
-        userId: principal.userId,
-        organizationId: principal.organizationId,
-        readAll: action === "goals.read.all",
-        writeAll: action === "goals.write.all",
-        actor: { kind: "client", id: principal.tokenId, runId: null },
-        authentication: { kind: "api_token", subjectId: principal.tokenId },
-        clientInfo: null
-      },
+      access: await resolveScopedGoalAccess({
+        principal: {
+          userId: principal.userId,
+          organizationId: principal.organizationId,
+          scopes: principal.scopes,
+          actor: { kind: "client", id: principal.tokenId, runId: null },
+          authentication: { kind: "api_token", subjectId: principal.tokenId },
+          clientInfo: null
+        },
+        operation,
+        roleForUser: (userId, organizationId) =>
+          dependencies.organizations.roleForUser(userId, organizationId)
+      }),
       session: false
     };
   }
