@@ -49,7 +49,7 @@ function NewOrganizationPage() {
       <PageHeader
         eyebrow="Organization"
         title="New organization"
-        description="Create another workspace for a team or business."
+        description="Create another organization for a team or business."
       />
       <Card className="max-w-2xl">
         <CardHeader>
@@ -58,7 +58,7 @@ function NewOrganizationPage() {
           </div>
           <CardTitle>Create an organization</CardTitle>
           <CardDescription>
-            You’ll become its owner and it will become your active workspace.
+            You’ll become its owner and it will become your active organization.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

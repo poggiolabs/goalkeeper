@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     default: "Goalkeeper Docs",
     template: "%s | Goalkeeper Docs"
   },
-  description: "Documentation for the Goalkeeper workspace."
+  description: "Documentation for Goalkeeper."
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

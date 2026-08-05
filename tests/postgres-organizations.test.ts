@@ -89,11 +89,11 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL organizations", () => {
     };
     const first = await organizations.ensureForUser(user);
     const second = await organizations.createForUser(user, {
-      name: "Second Workspace"
+      name: "Second Organization"
     });
 
     const created = await apiTokens.create(user.id, second.activeOrganizationId, {
-      name: "Second workspace token",
+      name: "Second organization token",
       scopes: ["goals:read"]
     });
     expect(

@@ -18,7 +18,7 @@ function GoalsPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Workspace"
+        eyebrow="Organization"
         title="Goals"
         description="Define the outcomes your people and agents should work toward."
       />

@@ -23,7 +23,7 @@ export const apiOpenApiDocument = {
     { name: "Authentication", description: "User session lifecycle." },
     {
       name: "Organizations",
-      description: "Organization membership and active workspace selection."
+      description: "Organization membership and active organization selection."
     },
     {
       name: "API Tokens",

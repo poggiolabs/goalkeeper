@@ -2,7 +2,7 @@
 
 Team goals for AI agents
 
-## Workspace
+## Repository layout
 
 - `apps/web` — React web application built with Vite.
 - `services/api` — REST service running on Bun.
@@ -53,7 +53,7 @@ bun run db:migrate   # apply API database migrations
 bun run auth:verify-email -- user@example.com # verify a local email principal
 bun run db:down      # stop PostgreSQL
 bun run db:logs      # follow PostgreSQL logs
-bun run typecheck    # type-check every workspace
+bun run typecheck    # type-check every package
 bun run test         # run the test suite
 bun run build        # create production builds
 bun run check        # type-check, test, and build

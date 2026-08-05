@@ -97,7 +97,7 @@ function ShellContent() {
           {isSettingsRoute ? (
             <SettingsNavigation backHref={lastAppPath} />
           ) : (
-            <WorkspaceNavigation />
+            <MainNavigation />
           )}
         </SidebarContent>
 
@@ -131,13 +131,13 @@ function ShellContent() {
   );
 }
 
-function WorkspaceNavigation() {
+function MainNavigation() {
   const location = useLocation();
   const { setOpenMobile } = useSidebar();
 
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+      <SidebarGroupLabel>Organization</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
           {navigationRoutes.map((route) => {
