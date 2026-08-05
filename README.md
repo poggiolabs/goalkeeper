@@ -65,6 +65,13 @@ bun run check        # type-check, test, and build
 The API service publishes a generated OpenAPI document consumed by the
 documentation site.
 
+## Releases
+
+Release Please maintains the repository version and publishes multi-platform
+API, MCP, and web images plus an attested static web distribution. See the
+[release documentation](services/docs/content/docs/releases.mdx) for artifact
+coordinates, runtime configuration, and verification commands.
+
 ## Authentication
 
 Open <http://localhost:3000> to exercise the local authentication flow.

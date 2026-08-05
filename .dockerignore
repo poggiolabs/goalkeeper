@@ -1,8 +1,11 @@
 .git
-node_modules
+.github
+.env
+.env.*
 **/node_modules
-dist
 **/dist
-.next
 **/.next
-.env*
+**/.source
+coverage
+logs
+*.log

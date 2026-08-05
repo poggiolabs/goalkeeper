@@ -10,5 +10,8 @@
     "auth:verify-email": "bun run src/verify-email.ts",
     "typecheck": "tsc --noEmit",
     "build": "bun build src/server.ts --target bun --outdir dist"
+  },
+  "dependencies": {
+    "emailjs": "^5.0.2"
   }
 }
