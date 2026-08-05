@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+
+    steps:
+      - name: Open or update the release pull request
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+
+  publish:
+    name: Publish release artifacts
+    needs: release
+    if: ${{ needs.release.outputs.created == 'true' }}
+    uses: ./.github/workflows/publish-artifacts.yml
+    with:
+      ref: ${{ needs.release.outputs.tag }}
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write

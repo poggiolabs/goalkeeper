@@ -39,6 +39,9 @@
     "services/api": {
       "name": "@goalkeeper/api",
       "version": "0.0.0",
+      "dependencies": {
+        "emailjs": "^5.0.2",
+      },
     },
     "services/docs": {
       "name": "@goalkeeper/docs",
@@ -753,6 +756,8 @@
     "ee-first": ["ee-first@1.1.1", "", {}, "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow=="],
 
     "electron-to-chromium": ["electron-to-chromium@1.5.401", "", {}, "sha512-H6ViHN68nGYlChEvlIU67fn8O2/tpbWQPwck98yaJmh+08LSvHiydzDQ6oXNccLU3kNRVIRS9A4mA7CG+i6fLQ=="],
+
+    "emailjs": ["emailjs@5.0.2", "", { "peerDependencies": { "typescript": ">=5.0.0" }, "optionalPeers": ["typescript"] }, "sha512-0ihvr8N6WFFgnJRp5aMnmfEuKtIza5V/tHWErQbHzoVb4UJnpqTl/V0hLbfYKIzc6kMA/JcY0L0PAyLW6rOT+A=="],
 
     "emoji-regex": ["emoji-regex@10.6.0", "", {}, "sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A=="],
 

@@ -1,0 +1,121 @@
+---
+title: Releases
+description: Versioning, published artifacts, and operator verification.
+---
+
+Goalkeeper has one product version for the repository. Internal packages
+remain private implementation units and are not versioned or published
+independently.
+
+## Versioning policy
+
+Goalkeeper follows Semantic Versioning with `vMAJOR.MINOR.PATCH` Git tags.
+
+- Before `1.0.0`, incompatible and backwards-compatible features increment
+  `MINOR`; fixes increment `PATCH`.
+- After `1.0.0`, incompatible changes increment `MAJOR`, backwards-compatible
+  functionality increments `MINOR`, and fixes increment `PATCH`.
+- A version covers the REST API, MCP server, database migrations, browser app,
+  and all other source in this repository as one tested release.
+
+The root `package.json` is the source version. Goalkeeper is distributed under
+the Apache License 2.0.
+
+## Release process
+
+Release Please maintains one release pull request from Conventional Commit
+messages on `main`:
+
+- `fix:` proposes a patch release;
+- `feat:` proposes a minor release;
+- a `BREAKING CHANGE:` footer or `!` proposes an incompatible release.
+
+Merging the release pull request updates `package.json` and `CHANGELOG.md`,
+creates the matching tag, and creates a draft GitHub Release. Publication then:
+
+1. verifies the immutable tag and reruns generated-contract, typecheck, test,
+   build, and PostgreSQL migration checks against the tagged source;
+2. attaches the static browser distribution, checksum, and provenance bundle;
+3. publishes the API, MCP, and web OCI images for `linux/amd64` and
+   `linux/arm64` with provenance attestations; and
+4. publishes the GitHub Release only after every artifact succeeds.
+
+Configure a fine-grained `RELEASE_PLEASE_TOKEN` Actions secret with repository
+Contents and Pull requests write access. Release Please uses this token so its
+pull request triggers normal pull-request workflows. Artifact publication uses
+the repository-scoped `GITHUB_TOKEN`.
+
+Before the first public release, confirm the three GHCR packages inherit public
+visibility from this repository and require CI on the release pull request.
+
+If publication fails, the GitHub Release remains a draft. The artifact workflow
+can republish an existing immutable tag:
+
+```sh
+gh workflow run publish-artifacts.yml --ref v0.1.0 -f ref=v0.1.0
+```
+
+The dispatch ref and input must identify the same tag so provenance resolves to
+the release commit. Release tags must never move.
+
+## Published artifacts
+
+Each release publishes these multi-platform images:
+
+- `ghcr.io/poggiolabs/goalkeeper-api:<version>`
+- `ghcr.io/poggiolabs/goalkeeper-mcp:<version>`
+- `ghcr.io/poggiolabs/goalkeeper-web:<version>`
+
+Stable releases also update `latest`; prereleases do not. Deployments should
+pin an exact version or, preferably, the published digest. Every image uses
+digest-pinned base images and includes OCI source, version, and revision labels
+plus GitHub/Sigstore build-provenance attestations.
+
+The release also attaches a static browser distribution for CDN or object
+storage deployments:
+
+- `goalkeeper-web-dist-<version>.tar.gz`
+- `goalkeeper-web-dist-<version>.tar.gz.sha256`
+- `goalkeeper-web-dist-<version>.intoto.jsonl`
+
+The archive root contains `goalkeeper-manifest.json` with the product version
+and full Git revision. It also contains an empty `runtime-config.js`
+placeholder. Set `window.__GOALKEEPER_CONFIG__` before serving the archive, or
+use the web image's `GOALKEEPER_API_URL` and `GOALKEEPER_DOCS_URL` environment
+variables. An empty API URL selects the browser origin for same-origin reverse
+proxy deployments.
+
+Download and verify all release assets before extraction:
+
+```sh
+version=0.1.0
+gh release download "v$version" \
+  --repo poggiolabs/goalkeeper \
+  --pattern "goalkeeper-web-dist-$version*"
+source_digest="$(gh api "repos/poggiolabs/goalkeeper/commits/v$version" --jq .sha)"
+sha256sum --check "goalkeeper-web-dist-$version.tar.gz.sha256"
+gh attestation verify "goalkeeper-web-dist-$version.tar.gz" \
+  --repo poggiolabs/goalkeeper \
+  --bundle "goalkeeper-web-dist-$version.intoto.jsonl" \
+  --source-digest "$source_digest" \
+  --signer-workflow poggiolabs/goalkeeper/.github/workflows/publish-artifacts.yml
+```
+
+The MCP image requires a deployment-accurate `PUBLIC_MCP_URL` and corresponding
+host/origin policy. The API and MCP images share the same PostgreSQL schema and
+run migrations under a database advisory lock, so they can start concurrently.
+
+The API image requires production email delivery:
+
+```sh
+AUTH_EMAIL_DELIVERY=smtp
+AUTH_EMAIL_FROM='Goalkeeper <noreply@example.com>'
+AUTH_SMTP_URL='smtps://user:password@smtp.example.com:465'
+```
+
+Use `smtp://` for STARTTLS (port 587 by default) or `smtps://` for implicit TLS
+(port 465 by default). `AUTH_EMAIL_DELIVERY=log` is restricted to non-production
+processes because authentication messages contain live bearer links.
+
+The documentation site is not an operator runtime and is therefore not
+published as a release image.

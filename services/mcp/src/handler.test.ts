@@ -496,4 +496,41 @@ describe("Goalkeeper MCP server", () => {
     ).toThrow("MCP allowed origins must be origins");
     await harness.handler.close();
   });
+
+  test("normalizes trailing slashes while preserving deployment prefixes", async () => {
+    const harness = await createHarness();
+    for (const [configuredUrl, expectedPath] of [
+      ["https://mcp.example.com/", "/mcp"],
+      ["https://mcp.example.com/mcp/", "/mcp"],
+      ["https://mcp.example.com/prefix/mcp/", "/prefix/mcp"]
+    ] as const) {
+      const handler = createGoalkeeperMcpHandler({
+        apiTokens: harness.apiTokens,
+        goals: harness.goals,
+        organizations: harness.organizations,
+        publicMcpUrl: configuredUrl
+      });
+      expect(handler.resource.pathname).toBe(expectedPath);
+      expect(
+        (
+          await handler.fetch(
+            new Request(`https://mcp.example.com${expectedPath}`, {
+              headers: { host: "mcp.example.com" }
+            })
+          )
+        ).status
+      ).toBe(401);
+      expect(
+        (
+          await handler.fetch(
+            new Request(`https://mcp.example.com${expectedPath}/`, {
+              headers: { host: "mcp.example.com" }
+            })
+          )
+        ).status
+      ).toBe(404);
+      await handler.close();
+    }
+    await harness.handler.close();
+  });
 });

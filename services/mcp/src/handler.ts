@@ -36,7 +36,8 @@ export function createGoalkeeperMcpHandler(
   dependencies: GoalkeeperMcpDependencies
 ) {
   let resource = validateMcpResourceUrl(dependencies.publicMcpUrl);
-  if (resource.pathname === "/") resource.pathname = "/mcp";
+  const resourcePath = resource.pathname.replace(/\/+$/, "");
+  resource.pathname = resourcePath || "/mcp";
   const dangerouslyAllowInsecureIssuerUrl =
     dependencies.dangerouslyAllowInsecureIssuerUrl ?? false;
   const metadataOptions = dependencies.oauthProvider

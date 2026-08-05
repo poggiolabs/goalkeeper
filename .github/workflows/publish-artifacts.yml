@@ -1,0 +1,265 @@
+name: Publish artifacts
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: SemVer release tag to publish
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: SemVer release tag to publish or republish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: publish-artifacts-${{ inputs.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Validate release
+    runs-on: ubuntu-latest
+    env:
+      TEST_DATABASE_URL: postgresql://goalkeeper:goalkeeper@127.0.0.1:5432/goalkeeper
+    services:
+      postgres:
+        image: postgres:17@sha256:39fb82e41109483c81ac15422a302500b4a753777b47f8431038703536bc6c52
+        env:
+          POSTGRES_DB: goalkeeper
+          POSTGRES_USER: goalkeeper
+          POSTGRES_PASSWORD: goalkeeper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U goalkeeper -d goalkeeper"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      stable: ${{ steps.version.outputs.stable }}
+      revision: ${{ steps.revision.outputs.revision }}
+
+    steps:
+      - name: Check out release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.9
+
+      - name: Validate version
+        id: version
+        env:
+          RELEASE_REF: ${{ inputs.ref }}
+        run: |
+          version="$(bun scripts/validate-release.ts "$RELEASE_REF")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate immutable tag
+        env:
+          RELEASE_REF: ${{ inputs.ref }}
+        run: |
+          tag_commit="$(git rev-parse "refs/tags/$RELEASE_REF^{commit}")"
+          head_commit="$(git rev-parse HEAD)"
+          test "$tag_commit" = "$head_commit"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$GITHUB_SHA" != "$tag_commit" ]]; then
+            echo "::error::Manual publication must be dispatched at $RELEASE_REF so provenance identifies the release commit"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify generated contracts
+        run: |
+          bun run docs:generate
+          git diff --exit-code
+
+      - name: Verify release source
+        run: bun run check
+
+      - name: Resolve revision
+        id: revision
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  web-distribution:
+    name: Build Goalkeeper web distribution
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Check out release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.9
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build distribution
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          REVISION: ${{ needs.prepare.outputs.revision }}
+        run: bun scripts/web-distribution.ts build "$VERSION" "$REVISION"
+
+      - name: Package and validate distribution
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          REVISION: ${{ needs.prepare.outputs.revision }}
+        run: |
+          archive="goalkeeper-web-dist-$VERSION.tar.gz"
+          source_date_epoch="$(git show -s --format=%ct "$REVISION")"
+          mkdir -p artifacts extracted
+          tar --sort=name --mtime="@$source_date_epoch" \
+            --owner=0 --group=0 --numeric-owner --format=posix \
+            --pax-option=delete=atime,delete=ctime \
+            -czf "artifacts/$archive" -C apps/web/dist .
+          tar -xzf "artifacts/$archive" -C extracted
+          bun scripts/web-distribution.ts verify "$VERSION" "$REVISION" extracted
+          bun scripts/web-distribution.ts checksum "artifacts/$archive"
+
+      - name: Attest distribution provenance
+        id: provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: |
+            artifacts/goalkeeper-web-dist-${{ needs.prepare.outputs.version }}.tar.gz
+            artifacts/goalkeeper-web-dist-${{ needs.prepare.outputs.version }}.tar.gz.sha256
+
+      - name: Attach distribution to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REF: ${{ inputs.ref }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          archive="artifacts/goalkeeper-web-dist-$VERSION.tar.gz"
+          provenance="artifacts/goalkeeper-web-dist-$VERSION.intoto.jsonl"
+          cp "$PROVENANCE_BUNDLE" "$provenance"
+          gh release upload "$RELEASE_REF" \
+            "$archive" "$archive.sha256" "$provenance" \
+            --clobber
+
+  publish-images:
+    name: Publish ${{ matrix.image }}
+    needs:
+      - prepare
+      - web-distribution
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: goalkeeper-api
+            dockerfile: containers/api/Dockerfile
+          - image: goalkeeper-mcp
+            dockerfile: containers/mcp/Dockerfile
+          - image: goalkeeper-web
+            dockerfile: containers/web/Dockerfile
+
+    steps:
+      - name: Check out release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image metadata
+        id: metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=${{ needs.prepare.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.prepare.outputs.stable }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.revision }}
+
+      - name: Build and publish image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            REVISION=${{ needs.prepare.outputs.revision }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      - name: Attest image provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  finalize:
+    name: Publish immutable GitHub Release
+    needs:
+      - prepare
+      - web-distribution
+      - publish-images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Publish completed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_REF: ${{ inputs.ref }}
+        run: |
+          is_draft="$(gh release view "$RELEASE_REF" --repo "$REPOSITORY" --json isDraft --jq .isDraft)"
+          if [[ "$is_draft" != "true" ]]; then
+            echo "::error::$RELEASE_REF must remain a draft until every artifact is published"
+            exit 1
+          fi
+          gh release edit "$RELEASE_REF" --repo "$REPOSITORY" --draft=false
