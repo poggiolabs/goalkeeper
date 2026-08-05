@@ -105,7 +105,13 @@ describe("Goalkeeper MCP server", () => {
       const createResult = await client.callTool({
         name: "create_goal",
         arguments: {
-          prompt: "Manage goals through a modern MCP server",
+          detailedDescription: "Manage goals through a modern MCP server",
+          criteria: [
+            {
+              title: "MCP access",
+              description: "The goal is readable through MCP."
+            }
+          ],
           labelIds: [label.id]
         }
       });
@@ -118,7 +124,13 @@ describe("Goalkeeper MCP server", () => {
       expect(listResult.structuredContent).toMatchObject({
         goals: [
           {
-            prompt: "Manage goals through a modern MCP server",
+            detailedDescription: "Manage goals through a modern MCP server",
+            criteria: [
+              {
+                title: "MCP access",
+                description: "The goal is readable through MCP."
+              }
+            ],
             labels: [{ id: label.id, name: "MCP" }]
           }
         ]
@@ -152,7 +164,7 @@ describe("Goalkeeper MCP server", () => {
       await expect(
         client.callTool({
           name: "create_goal",
-          arguments: { prompt: "This must be denied" }
+          arguments: { detailedDescription: "This must be denied" }
         })
       ).rejects.toBeInstanceOf(InsufficientScopeError);
     } finally {

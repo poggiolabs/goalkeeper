@@ -15,6 +15,11 @@ import { goalStatuses } from "../../api/src/goals/types";
 import type { OrganizationService } from "../../api/src/organizations/service";
 import { principalFromAuthInfo } from "./auth";
 
+const goalCriterionSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().min(1).max(10_000)
+});
+
 export function createGoalkeeperMcpServer(input: {
   authInfo: AuthInfo;
   goals: GoalService;
@@ -71,11 +76,11 @@ export function createGoalkeeperMcpServer(input: {
       title: "Create goal",
       description: "Create an active durable goal.",
       inputSchema: z.object({
-        prompt: z.string().min(1).max(50_000),
+        detailedDescription: z.string().min(1),
         title: z.string().min(1).max(200).optional(),
         ownerUserId: z.string().min(1).max(200).optional(),
         labelIds: z.array(z.uuid()).max(20).optional(),
-        measurementMethod: z.string().min(1).max(10_000).nullable().optional()
+        criteria: z.array(goalCriterionSchema).max(100).optional()
       }),
       annotations: { readOnlyHint: false, destructiveHint: false }
     },
@@ -89,16 +94,17 @@ export function createGoalkeeperMcpServer(input: {
     "update_goal",
     {
       title: "Update goal",
-      description: "Update goal state, ownership, measurement, or labels.",
+      description:
+        "Update goal description, criteria, state, ownership, or labels.",
       inputSchema: z
         .object({
           goalId: z.uuid(),
           title: z.string().min(1).max(200).optional(),
-          prompt: z.string().min(1).max(50_000).optional(),
+          detailedDescription: z.string().min(1).optional(),
           status: z.enum(goalStatuses).optional(),
           ownerUserId: z.string().min(1).max(200).optional(),
           labelIds: z.array(z.uuid()).max(20).optional(),
-          measurementMethod: z.string().min(1).max(10_000).nullable().optional()
+          criteria: z.array(goalCriterionSchema).max(100).optional()
         })
         .refine(
           ({ goalId: _goalId, ...update }) =>
