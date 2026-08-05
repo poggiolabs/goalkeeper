@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "bun --watch src/server.ts",
     "start": "bun run src/server.ts",
+    "db:migrate": "bun run src/migrate.ts",
+    "auth:verify-email": "bun run src/verify-email.ts",
     "typecheck": "tsc --noEmit",
     "build": "bun build src/server.ts --target bun --outdir dist"
   }

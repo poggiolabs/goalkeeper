@@ -1,0 +1,55 @@
+---
+title: API tokens
+description: Scoped, revocable credentials for automation and integrations.
+---
+
+API tokens are opaque bearer credentials for non-interactive clients. They are
+separate from browser sessions and from any access JWT accepted by a custom
+`AuthBackend`.
+
+## Lifecycle
+
+An authenticated user creates, lists, and revokes tokens from the protected
+account page or the `/v1/api-tokens` API. Creation returns the full secret once.
+Subsequent responses contain only its non-sensitive prefix and metadata.
+
+The database stores a SHA-256 hash of a 256-bit random secret. Every token has a
+bounded expiry of 1–365 days, defaults to 90 days, and is checked for expiration
+and revocation whenever it is resolved. `lastUsedAt` writes are limited to once
+per five-minute interval per token.
+
+Revocation is persistent and immediate. API tokens cannot call token-management
+operations; those operations require an interactive browser session.
+
+## Scopes
+
+Every token has at least one scope:
+
+| Scope | Intended capability |
+| --- | --- |
+| `goals:read:own` | Read goals owned by the token owner |
+| `goals:write:own` | Create, update, or delete goals owned by the token owner |
+| `goals:read:all` | Read every goal visible to the token owner |
+| `goals:write:all` | Create, update, or delete every goal writable by the token owner |
+
+The API scope registry is the canonical source for identifiers, labels,
+defaults, and granted capabilities. `GET /v1/api-token-scopes` exposes its UI
+metadata. The token form initially selects only `goals:read:own` and requires at
+least one selected scope.
+
+All-goals scopes include the corresponding own-goals capability. Write scopes
+do not imply read access. `authorizeApiToken` denies capabilities absent from
+the registry and revalidates the token owner's current authority. Removing that
+authority blocks the token without requiring token replacement.
+
+## JWT boundary
+
+API tokens are intentionally not JWTs. Database-backed opaque credentials make
+revocation and current-policy checks authoritative on every request.
+
+An `AuthBackend` may accept short-lived JWTs for interactive access. The
+provider must verify the signature using an allowed algorithm and key ID, then
+validate issuer, audience, and expiry before returning a canonical session. Key
+rotation should publish the current verification key alongside previous keys
+for a bounded overlap window. Unverified decoded claims must never establish a
+session.

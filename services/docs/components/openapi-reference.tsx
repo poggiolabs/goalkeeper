@@ -1,6 +1,11 @@
 type JsonSchema = {
+  $ref?: string;
   type?: string;
+  format?: string;
   const?: unknown;
+  enum?: unknown[];
+  items?: JsonSchema;
+  anyOf?: JsonSchema[];
   required?: string[];
   properties?: Record<string, JsonSchema>;
 };
@@ -14,6 +19,17 @@ type OpenApiOperation = {
   operationId?: string;
   summary?: string;
   description?: string;
+  parameters?: Array<{
+    name: string;
+    in: string;
+    required?: boolean;
+    description?: string;
+    schema?: JsonSchema;
+  }>;
+  requestBody?: {
+    required?: boolean;
+    content?: Record<string, { schema?: JsonSchema }>;
+  };
   responses?: Record<string, OpenApiResponse>;
 };
 
@@ -54,6 +70,56 @@ export function OpenApiReference({ spec }: { spec: OpenApiDocument }) {
             </p>
           ) : null}
 
+          {operation.parameters?.length ? (
+            <div className="mt-5 grid gap-3">
+              <h3 className="text-sm font-semibold text-fd-foreground">
+                Parameters
+              </h3>
+              {operation.parameters.map((parameter) => (
+                <div
+                  className="rounded-md border border-fd-border p-3 text-sm"
+                  key={`${parameter.in}:${parameter.name}`}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <code>{parameter.name}</code>
+                    <span className="text-xs text-fd-muted-foreground">
+                      {parameter.in} ·{" "}
+                      {parameter.schema
+                        ? describeSchema(parameter.schema)
+                        : "value"}{" "}
+                      · {parameter.required ? "required" : "optional"}
+                    </span>
+                  </div>
+                  {parameter.description ? (
+                    <p className="mt-2 text-sm text-fd-muted-foreground">
+                      {parameter.description}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {operation.requestBody?.content ? (
+            <div className="mt-5 grid gap-3">
+              <h3 className="text-sm font-semibold text-fd-foreground">
+                Request body
+              </h3>
+              {Object.entries(operation.requestBody.content).map(
+                ([mediaType, value]) => (
+                  <div
+                    className="rounded-md border border-fd-border p-3 text-sm text-fd-muted-foreground"
+                    key={mediaType}
+                  >
+                    <code>{mediaType}</code>
+                    {value.schema ? ` · ${describeSchema(value.schema)}` : null}
+                    {operation.requestBody?.required ? " · required" : null}
+                  </div>
+                )
+              )}
+            </div>
+          ) : null}
+
           <div className="mt-5 grid gap-3">
             <h3 className="text-sm font-semibold text-fd-foreground">Responses</h3>
             {Object.entries(operation.responses ?? {}).map(
@@ -91,14 +157,34 @@ export function OpenApiReference({ spec }: { spec: OpenApiDocument }) {
 }
 
 function describeSchema(schema: JsonSchema): string {
+  if (schema.$ref) {
+    return schema.$ref.split("/").at(-1) ?? "value";
+  }
+
+  if (schema.anyOf) {
+    return schema.anyOf.map(describeSchema).join(" or ");
+  }
+
+  if (schema.enum) {
+    return schema.enum.map(String).join(" | ");
+  }
+
+  if (schema.type === "array") {
+    return `array of ${schema.items ? describeSchema(schema.items) : "values"}`;
+  }
+
   if (schema.type !== "object" || !schema.properties) {
-    return schema.type ?? "value";
+    return schema.format
+      ? `${schema.type ?? "value"} (${schema.format})`
+      : schema.type ?? "value";
   }
 
   return Object.entries(schema.properties)
     .map(([name, property]) => {
       const required = schema.required?.includes(name) ? "required" : "optional";
-      const value = property.const === undefined ? property.type ?? "value" : JSON.stringify(property.const);
+      const value = property.const === undefined
+        ? describeSchema(property)
+        : JSON.stringify(property.const);
       return `${name}: ${value} (${required})`;
     })
     .join(", ");

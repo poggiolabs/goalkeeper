@@ -49,6 +49,8 @@ bun run api:specs    # generate OpenAPI documents
 bun run docs:generate # generate API docs and Fumadocs sources
 bun run open:web     # open the web application
 bun run db:up        # start PostgreSQL
+bun run db:migrate   # apply API database migrations
+bun run auth:verify-email -- user@example.com # verify a local email principal
 bun run db:down      # stop PostgreSQL
 bun run db:logs      # follow PostgreSQL logs
 bun run typecheck    # type-check every workspace
@@ -59,6 +61,25 @@ bun run check        # type-check, test, and build
 
 The API service publishes a generated OpenAPI document consumed by the
 documentation site.
+
+## Authentication
+
+Open <http://localhost:3000/account> to exercise the local authentication flow.
+Local development uses the built-in PostgreSQL email provider. Register from the
+root page, then open and confirm the verification link logged by the API or run
+`bun run auth:verify-email -- user@example.com`.
+
+Self-hosted operators can replace the built-in implementation by supplying an
+`AuthBackend` to `createApiHandler`. The browser continues to use the canonical
+`/v1/auth/*` routes and receives only the application's `id`, `displayName`, and
+`email` fields. Provider-specific claims and SDK types remain behind that
+interface.
+
+The account page also manages scoped API tokens. Token secrets are returned
+once, stored only as SHA-256 hashes, expire after a bounded lifetime, and can be
+revoked immediately. Available scopes distinguish access to the token owner's
+goals from access to all goals: `goals:read:own`, `goals:write:own`,
+`goals:read:all`, and `goals:write:all`.
 
 ## License
 

@@ -9,6 +9,10 @@ title: Services
 | Docs | `http://localhost:3003` | Product and engineering documentation |
 | PostgreSQL | `localhost:5432` | Local relational data store |
 
+The root page provides email registration and login, and `/account` is protected. The account page loads
+the current user from the REST API, provides logout, and manages scoped API
+tokens.
+
 ## Health checks
 
 The REST API exposes `GET /health`.
@@ -17,3 +21,6 @@ The REST API exposes `GET /health`.
 
 The [REST API reference](/docs/api/rest-api) is generated from its OpenAPI
 document.
+
+Authentication uses the canonical `/v1/auth/*` routes described in
+[Authentication](/docs/concepts/authentication).
