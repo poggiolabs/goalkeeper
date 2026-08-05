@@ -152,12 +152,12 @@ describe("goals and labels", () => {
     await expect(service.deleteLabel(all, label.id)).resolves.toBeUndefined();
   });
 
-  test("rejects schedules and cross-organization labels", async () => {
+  test("rejects unsupported fields and cross-organization labels", async () => {
     const { service, all } = createHarness();
     await expect(
       service.createGoal(all, {
-        detailedDescription: "Do not smuggle execution policy into goal state",
-        schedules: []
+        detailedDescription: "Reject fields outside the goal contract",
+        unsupportedField: true
       })
     ).rejects.toMatchObject({ code: "invalid_goal_request" });
 

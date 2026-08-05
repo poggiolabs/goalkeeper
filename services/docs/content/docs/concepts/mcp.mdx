@@ -1,0 +1,48 @@
+---
+title: MCP
+description: Goal and label tools for AI agents.
+---
+
+Goalkeeper exposes a stateless Streamable HTTP MCP endpoint at `/mcp`. It
+supports the MCP `2026-07-28` protocol and the stateless `2025-11-25` fallback.
+The tools create and read goals, update goal metadata, append and list status
+updates, and manage labels. Goals are archived through `report_goal_update`;
+there is no hard-delete tool.
+
+Local development and self-hosted deployments can authenticate with a
+Goalkeeper API token in the `Authorization: Bearer` header. The token's
+organization, scopes, expiry, and owner's live membership role constrain every
+tool call.
+
+Hosted deployments can inject an `McpOAuthProvider` into
+`createGoalkeeperMcpHandler`. That provider is the OAuth authorization server;
+the MCP service remains a resource server. The provider must:
+
+- publish OAuth authorization-server metadata with PKCE;
+- support Client ID Metadata Documents, Dynamic Client Registration, or
+  pre-registered clients;
+- validate token issuer, expiry, and the exact `/mcp` resource audience;
+- return the Goalkeeper user, organization, client, and granted scopes;
+- optionally return a provider-verified agent ID and run ID when the client is
+  acting as a specific agent; and
+- advertise Client ID Metadata Document or Dynamic Client Registration support
+  when available. Modern clients prefer Client ID Metadata Documents; DCR
+  remains available as a compatibility fallback.
+
+When a provider is configured, Goalkeeper publishes RFC 9728 Protected
+Resource Metadata and includes its URL in bearer challenges. Authorization
+server and registration endpoints are discovered from provider metadata;
+Goalkeeper does not proxy or reimplement them.
+
+`PUBLIC_MCP_URL` is the canonical OAuth resource identifier. It must use HTTPS
+and must not contain a fragment. Plain HTTP is accepted only for explicit
+`localhost`, `127.0.0.1`, or `[::1]` development URLs.
+
+Status-update attribution separates the authorizing user from the immediate
+actor. API-token and ordinary OAuth calls attribute the actor to the verified
+credential or OAuth client. A provider-verified agent binding takes precedence
+when present. MCP client name and version are recorded separately as
+self-reported descriptive metadata and never establish identity.
+
+See the [MCP authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
+for the discovery and client-registration flow.
