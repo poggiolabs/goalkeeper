@@ -66,7 +66,7 @@ documentation site.
 
 Open <http://localhost:3000/account> to exercise the local authentication flow.
 Local development uses the built-in PostgreSQL email provider. Register from the
-root page, then open the verification URL logged by the API or run
+root page, then open and confirm the verification link logged by the API or run
 `bun run auth:verify-email -- user@example.com`.
 
 Self-hosted operators can replace the built-in implementation by supplying an

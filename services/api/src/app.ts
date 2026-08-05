@@ -31,8 +31,8 @@ export function createApiHandler(dependencies: ApiDependencies) {
     if (matches(request, apiRoutes.authSession)) {
       const session = await dependencies.auth.getSession(request);
       return session
-        ? json(session, 200, webOrigin)
-        : json({ error: "unauthorized" }, 401, webOrigin);
+        ? sensitiveJson(session, 200, webOrigin)
+        : sensitiveJson({ error: "unauthorized" }, 401, webOrigin);
     }
 
     if (matches(request, apiRoutes.authConfig)) {
@@ -44,15 +44,15 @@ export function createApiHandler(dependencies: ApiDependencies) {
         request,
         returnTo: safeReturnTo(url.searchParams.get("returnTo"), webOrigin)
       });
-      return redirect(transition, webOrigin);
+      return sensitiveRedirect(transition, webOrigin);
     }
 
     if (matches(request, apiRoutes.authEmailLogin)) {
       if (!hasAllowedOrigin(request, webOrigin)) {
-        return json({ error: "forbidden" }, 403, webOrigin);
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
       }
       if (!isEmailAuthBackend(dependencies.auth)) {
-        return json({ error: "not_found" }, 404, webOrigin);
+        return sensitiveJson({ error: "not_found" }, 404, webOrigin);
       }
       try {
         const body = (await request.json()) as {
@@ -68,7 +68,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
             webOrigin
           )
         });
-        return json(
+        return sensitiveJson(
           { redirectTo: transition.redirectTo },
           200,
           webOrigin,
@@ -81,10 +81,10 @@ export function createApiHandler(dependencies: ApiDependencies) {
 
     if (matches(request, apiRoutes.authRegister)) {
       if (!hasAllowedOrigin(request, webOrigin)) {
-        return json({ error: "forbidden" }, 403, webOrigin);
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
       }
       if (!isEmailAuthBackend(dependencies.auth)) {
-        return json({ error: "not_found" }, 404, webOrigin);
+        return sensitiveJson({ error: "not_found" }, 404, webOrigin);
       }
       try {
         const body = (await request.json()) as {
@@ -92,7 +92,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
           password?: unknown;
           displayName?: unknown;
         };
-        return json(
+        return sensitiveJson(
           await dependencies.auth.register({
             email: typeof body.email === "string" ? body.email : "",
             password: typeof body.password === "string" ? body.password : "",
@@ -108,56 +108,61 @@ export function createApiHandler(dependencies: ApiDependencies) {
     }
 
     if (matches(request, apiRoutes.authVerifyEmail)) {
+      if (!hasAllowedOrigin(request, webOrigin)) {
+        return sensitiveJson(
+          { error: "forbidden" },
+          403,
+          webOrigin,
+          undefined,
+          true
+        );
+      }
       if (!isEmailAuthBackend(dependencies.auth)) {
-        return json({ error: "not_found" }, 404, webOrigin);
+        return sensitiveJson(
+          { error: "not_found" },
+          404,
+          webOrigin,
+          undefined,
+          true
+        );
       }
       try {
+        const body = (await request.json()) as { token?: unknown };
         const transition = await dependencies.auth.verifyEmail({
-          token: url.searchParams.get("token") ?? "",
-          returnTo: safeReturnTo(
-            url.searchParams.get("returnTo"),
-            webOrigin,
-            "/"
-          )
+          token: typeof body.token === "string" ? body.token : "",
+          returnTo: new URL("/", webOrigin).toString()
         });
-        const headers = new Headers(transition.headers);
-        headers.set("cache-control", "no-store");
-        headers.set("referrer-policy", "no-referrer");
-        return redirect({ ...transition, headers }, webOrigin);
+        return sensitiveJson(
+          { redirectTo: transition.redirectTo },
+          200,
+          webOrigin,
+          transition.headers,
+          true
+        );
       } catch (error) {
-        if (error instanceof AuthError) {
-          const location = new URL("/", webOrigin);
-          location.searchParams.set("verification", "invalid");
-          return redirect(
-            {
-              redirectTo: location.toString(),
-              headers: {
-                "cache-control": "no-store",
-                "referrer-policy": "no-referrer"
-              }
-            },
-            webOrigin
-          );
-        }
-        throw error;
+        return authErrorResponse(error, webOrigin, true);
       }
     }
 
     if (matches(request, apiRoutes.authCallback)) {
-      const transition = await dependencies.auth.completeLogin({
-        request,
-        returnTo: safeReturnTo(url.searchParams.get("returnTo"), webOrigin)
-      });
-      return redirect(transition, webOrigin);
+      try {
+        const transition = await dependencies.auth.completeLogin({
+          request,
+          returnTo: safeReturnTo(url.searchParams.get("returnTo"), webOrigin)
+        });
+        return sensitiveRedirect(transition, webOrigin, true);
+      } catch (error) {
+        return authErrorResponse(error, webOrigin, true);
+      }
     }
 
     if (matches(request, apiRoutes.authLogout)) {
       if (!hasAllowedOrigin(request, webOrigin)) {
-        return json({ error: "forbidden" }, 403, webOrigin);
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
       }
 
       const transition = await dependencies.auth.logout(request);
-      return json(
+      return sensitiveJson(
         { redirectTo: transition.redirectTo },
         200,
         webOrigin,
@@ -184,9 +189,11 @@ export function createApiHandler(dependencies: ApiDependencies) {
 
     if (matches(request, apiRoutes.apiTokensList)) {
       const session = await dependencies.auth.getSession(request);
-      if (!session) return json({ error: "unauthorized" }, 401, webOrigin);
+      if (!session) {
+        return sensitiveJson({ error: "unauthorized" }, 401, webOrigin);
+      }
 
-      return json(
+      return sensitiveJson(
         await dependencies.apiTokens.list(session.user.id),
         200,
         webOrigin
@@ -195,14 +202,16 @@ export function createApiHandler(dependencies: ApiDependencies) {
 
     if (matches(request, apiRoutes.apiTokensCreate)) {
       if (!hasAllowedOrigin(request, webOrigin)) {
-        return json({ error: "forbidden" }, 403, webOrigin);
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
       }
       const session = await dependencies.auth.getSession(request);
-      if (!session) return json({ error: "unauthorized" }, 401, webOrigin);
+      if (!session) {
+        return sensitiveJson({ error: "unauthorized" }, 401, webOrigin);
+      }
 
       try {
         const body = await request.json();
-        return json(
+        return sensitiveJson(
           await dependencies.apiTokens.create(session.user.id, body),
           201,
           webOrigin
@@ -215,13 +224,15 @@ export function createApiHandler(dependencies: ApiDependencies) {
     const revokedTokenId = matchApiTokenRevoke(request);
     if (revokedTokenId) {
       if (!hasAllowedOrigin(request, webOrigin)) {
-        return json({ error: "forbidden" }, 403, webOrigin);
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
       }
       const session = await dependencies.auth.getSession(request);
-      if (!session) return json({ error: "unauthorized" }, 401, webOrigin);
+      if (!session) {
+        return sensitiveJson({ error: "unauthorized" }, 401, webOrigin);
+      }
 
       try {
-        return json(
+        return sensitiveJson(
           await dependencies.apiTokens.revoke(session.user.id, revokedTokenId),
           200,
           webOrigin
@@ -237,14 +248,14 @@ export function createApiHandler(dependencies: ApiDependencies) {
 
 function apiTokenErrorResponse(error: unknown, webOrigin: string): Response {
   if (error instanceof ApiTokenError) {
-    return json(
+    return sensitiveJson(
       { error: error.code, message: error.message },
       error.status,
       webOrigin
     );
   }
   if (error instanceof SyntaxError) {
-    return json(
+    return sensitiveJson(
       { error: "invalid_json", message: "Request body must be valid JSON" },
       400,
       webOrigin
@@ -253,19 +264,27 @@ function apiTokenErrorResponse(error: unknown, webOrigin: string): Response {
   throw error;
 }
 
-function authErrorResponse(error: unknown, webOrigin: string): Response {
+function authErrorResponse(
+  error: unknown,
+  webOrigin: string,
+  noReferrer = false
+): Response {
   if (error instanceof AuthError) {
-    return json(
+    return sensitiveJson(
       { error: error.code, message: error.message },
       error.status,
-      webOrigin
+      webOrigin,
+      undefined,
+      noReferrer
     );
   }
   if (error instanceof SyntaxError) {
-    return json(
+    return sensitiveJson(
       { error: "invalid_json", message: "Request body must be valid JSON" },
       400,
-      webOrigin
+      webOrigin,
+      undefined,
+      noReferrer
     );
   }
   throw error;
@@ -322,6 +341,20 @@ function redirect(transition: AuthTransition, webOrigin: string): Response {
   return responseWithCors(new Response(null, { status: 302, headers }), webOrigin);
 }
 
+function sensitiveRedirect(
+  transition: AuthTransition,
+  webOrigin: string,
+  noReferrer = false
+): Response {
+  return redirect(
+    {
+      ...transition,
+      headers: sensitiveHeaders(transition.headers, noReferrer)
+    },
+    webOrigin
+  );
+}
+
 function json(
   body: unknown,
   status: number,
@@ -332,6 +365,31 @@ function json(
     Response.json(body, { status, headers: extraHeaders }),
     webOrigin
   );
+}
+
+function sensitiveJson(
+  body: unknown,
+  status: number,
+  webOrigin: string,
+  extraHeaders?: HeadersInit,
+  noReferrer = false
+): Response {
+  return json(
+    body,
+    status,
+    webOrigin,
+    sensitiveHeaders(extraHeaders, noReferrer)
+  );
+}
+
+function sensitiveHeaders(
+  extraHeaders?: HeadersInit,
+  noReferrer = false
+): Headers {
+  const headers = new Headers(extraHeaders);
+  headers.set("cache-control", "no-store");
+  if (noReferrer) headers.set("referrer-policy", "no-referrer");
+  return headers;
 }
 
 function responseWithCors(response: Response, webOrigin: string): Response {

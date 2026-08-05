@@ -266,43 +266,50 @@
       }
     },
     "/v1/auth/verify-email": {
-      "get": {
+      "post": {
         "operationId": "verifyEmail",
         "summary": "Verify an email principal",
-        "description": "Consumes a single-use verification token and returns to the web application.",
+        "description": "Consumes a single-use verification token after explicit browser confirmation.",
         "tags": [
           "Authentication"
         ],
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "required": true,
-            "description": "Single-use email verification token.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "returnTo",
-            "in": "query",
-            "required": false,
-            "description": "Same-origin application URL to open after verification.",
-            "schema": {
-              "type": "string",
-              "format": "uri"
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailVerificationRequest"
+              }
             }
           }
-        ],
+        },
         "responses": {
-          "302": {
-            "description": "Return to the application with the verification result.",
-            "headers": {
-              "Location": {
-                "description": "Application result location.",
+          "200": {
+            "description": "The email principal was verified.",
+            "content": {
+              "application/json": {
                 "schema": {
-                  "type": "string",
-                  "format": "uri"
+                  "$ref": "#/components/schemas/AuthTransitionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The verification token is invalid or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request origin is not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -641,6 +648,19 @@
           "email": {
             "type": "string",
             "format": "email"
+          }
+        }
+      },
+      "EmailVerificationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1
           }
         }
       },

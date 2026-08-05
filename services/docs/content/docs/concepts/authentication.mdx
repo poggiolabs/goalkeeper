@@ -16,7 +16,7 @@ The REST API owns the canonical routes and user shape while an injected
 | `GET /v1/auth/login` | Begin login and continue to a same-origin URL |
 | `POST /v1/auth/login` | Sign in with the built-in email provider |
 | `POST /v1/auth/register` | Register an email principal |
-| `GET /v1/auth/verify-email` | Consume an email verification token |
+| `POST /v1/auth/verify-email` | Consume an email verification token after browser confirmation |
 | `GET /v1/auth/callback` | Complete login and continue to the application |
 | `POST /v1/auth/logout` | End the session and return the next browser URL |
 
@@ -60,9 +60,14 @@ email-verification token hashes are stored in PostgreSQL. Verification tokens
 are single-use and expire after 24 hours. Login uses one invalid-credentials
 response for unknown, incorrect, and unverified accounts.
 
-The local email-delivery adapter logs the verification message and callback URL
-to the API terminal. It is disabled in production. To verify a local principal
-without opening the callback URL, run:
+Verification links open the web application's `/verify-email` page with the
+token in the URL fragment. The page removes the fragment from browser history
+and requires explicit confirmation before it sends the token to the API. This
+prevents automated link scanners from consuming verification tokens.
+
+The local email-delivery adapter logs the verification message and link to the
+API terminal. It is disabled in production. To verify a local principal
+without opening and confirming the link, run:
 
 ```bash
 bun run auth:verify-email -- user@example.com

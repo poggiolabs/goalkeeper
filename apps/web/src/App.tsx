@@ -11,6 +11,7 @@ import {
   registerWithEmail,
   revokeApiToken,
   UnauthorizedError,
+  verifyEmail,
   type ApiToken,
   type ApiTokenScope,
   type ApiTokenScopeDefinition,
@@ -29,6 +30,8 @@ export function App() {
   switch (window.location.pathname) {
     case "/account":
       return <AccountPage />;
+    case "/verify-email":
+      return <VerifyEmailPage />;
     default:
       return <HomePage />;
   }
@@ -49,9 +52,6 @@ function HomePage() {
   const [message, setMessage] = useState<string | null>(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("verified") === "1") return "Email verified. You can sign in.";
-    if (params.get("verification") === "invalid") {
-      return "That verification link is invalid or expired.";
-    }
     return null;
   });
   const [authError, setAuthError] = useState<string | null>(null);
@@ -196,6 +196,62 @@ function HomePage() {
             </a>
           ))}
         </div>
+      </section>
+    </main>
+  );
+}
+
+function VerifyEmailPage() {
+  const [token] = useState(() =>
+    new URLSearchParams(window.location.hash.slice(1)).get("token")
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    window.history.replaceState(null, "", "/verify-email");
+  }, []);
+
+  async function handleVerification() {
+    if (!token) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      window.location.assign(await verifyEmail(apiUrl, token));
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "That verification link is invalid or expired."
+      );
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-card" aria-labelledby="verify-email-title">
+        <a className="wordmark" href="/">Goalkeeper</a>
+        <div>
+          <p className="eyebrow">Email verification</p>
+          <h1 id="verify-email-title">Verify your email</h1>
+          <p>
+            {token
+              ? "Confirm that you want to verify this email address."
+              : "That verification link is invalid or expired."}
+          </p>
+        </div>
+        {token ? (
+          <button
+            className="primary-button"
+            disabled={isSubmitting}
+            onClick={handleVerification}
+            type="button"
+          >
+            {isSubmitting ? "Verifying…" : "Verify email"}
+          </button>
+        ) : null}
+        {error ? <p className="form-error" role="alert">{error}</p> : null}
       </section>
     </main>
   );

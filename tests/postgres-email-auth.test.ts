@@ -157,8 +157,18 @@ class CapturingEmailDelivery implements EmailDelivery {
   latestVerificationToken(): string {
     const message = this.messages.at(-1);
     const url = message?.text.match(/https?:\/\/\S+/)?.[0];
-    const token = url ? new URL(url).searchParams.get("token") : null;
+    const verificationUrl = url ? new URL(url) : null;
+    const token = verificationUrl
+      ? new URLSearchParams(verificationUrl.hash.slice(1)).get("token")
+      : null;
     if (!token) throw new Error("Verification email did not contain a token");
+    if (
+      verificationUrl?.origin !== "http://localhost:3000" ||
+      verificationUrl.pathname !== "/verify-email" ||
+      verificationUrl.search !== ""
+    ) {
+      throw new Error("Verification email did not contain a safe web link");
+    }
     return token;
   }
 }

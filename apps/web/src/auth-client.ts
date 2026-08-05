@@ -59,7 +59,22 @@ export async function loginWithEmail(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input)
   });
-  await assertApiResponse(response, "Unable to sign in.");
+  await assertApiResponse(response, "Unable to sign in.", false);
+  const result = (await response.json()) as { redirectTo: string };
+  return result.redirectTo;
+}
+
+export async function verifyEmail(
+  apiUrl: string,
+  token: string
+): Promise<string> {
+  const response = await fetch(new URL("/v1/auth/verify-email", apiUrl), {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token })
+  });
+  await assertApiResponse(response, "Unable to verify email.", false);
   const result = (await response.json()) as { redirectTo: string };
   return result.redirectTo;
 }
@@ -173,9 +188,10 @@ export async function revokeApiToken(
 
 async function assertApiResponse(
   response: Response,
-  fallbackMessage: string
+  fallbackMessage: string,
+  sessionRequired = true
 ): Promise<void> {
-  if (response.status === 401) {
+  if (sessionRequired && response.status === 401) {
     throw new UnauthorizedError("Authentication is required.");
   }
   if (response.ok) return;

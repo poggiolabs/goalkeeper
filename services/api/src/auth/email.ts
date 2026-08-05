@@ -152,8 +152,10 @@ export function createPostgresEmailAuthBackend(options: {
       });
 
       if (result.kind === "verify") {
-        const verificationUrl = new URL("/v1/auth/verify-email", options.apiOrigin);
-        verificationUrl.searchParams.set("token", verificationSecret);
+        const verificationUrl = new URL("/verify-email", options.webOrigin);
+        verificationUrl.hash = new URLSearchParams({
+          token: verificationSecret
+        }).toString();
         await options.emailDelivery.send({
           to: result.email,
           subject: "Verify your Goalkeeper email",

@@ -55,6 +55,7 @@ describe("authentication contract", () => {
     );
 
     expect(response.status).toBe(401);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toEqual({ error: "unauthorized" });
   });
 
@@ -71,35 +72,51 @@ describe("authentication contract", () => {
       })
     );
     expect(registerResponse.status).toBe(202);
+    expect(registerResponse.headers.get("cache-control")).toBe("no-store");
     expect(await registerResponse.json()).toEqual({
       emailVerificationRequired: true,
       email: "test@example.com"
     });
 
     const verificationToken = [...authBackend.verificationTokens.keys()][0]!;
-    const verificationResponse = await handleApiRequest(
+    const scannerResponse = await handleApiRequest(
       new Request(
         `http://localhost${apiRoutes.authVerifyEmail.path}?token=${encodeURIComponent(verificationToken)}`
       )
     );
-    expect(verificationResponse.status).toBe(302);
-    expect(verificationResponse.headers.get("location")).toBe(
-      `${webOrigin}/?verified=1`
+    expect(scannerResponse.status).toBe(404);
+    expect(authBackend.verificationTokens.has(verificationToken)).toBe(true);
+
+    const verificationResponse = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.authVerifyEmail.path}`, {
+        method: "POST",
+        headers: { origin: webOrigin, "content-type": "application/json" },
+        body: JSON.stringify({ token: verificationToken })
+      })
     );
+    expect(verificationResponse.status).toBe(200);
+    expect(await verificationResponse.clone().json()).toEqual({
+      redirectTo: `${webOrigin}/?verified=1`
+    });
     expect(verificationResponse.headers.get("cache-control")).toBe("no-store");
     expect(verificationResponse.headers.get("referrer-policy")).toBe(
       "no-referrer"
     );
 
     const replayResponse = await handleApiRequest(
-      new Request(
-        `http://localhost${apiRoutes.authVerifyEmail.path}?token=${encodeURIComponent(verificationToken)}`
-      )
+      new Request(`http://localhost${apiRoutes.authVerifyEmail.path}`, {
+        method: "POST",
+        headers: { origin: webOrigin, "content-type": "application/json" },
+        body: JSON.stringify({ token: verificationToken })
+      })
     );
-    expect(replayResponse.status).toBe(302);
-    expect(replayResponse.headers.get("location")).toBe(
-      `${webOrigin}/?verification=invalid`
-    );
+    expect(replayResponse.status).toBe(400);
+    expect(replayResponse.headers.get("cache-control")).toBe("no-store");
+    expect(replayResponse.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(await replayResponse.json()).toEqual({
+      error: "invalid_or_expired_token",
+      message: "Invalid token"
+    });
 
     const loginResponse = await handleApiRequest(
       new Request(`http://localhost${apiRoutes.authEmailLogin.path}`, {
@@ -114,6 +131,7 @@ describe("authentication contract", () => {
     );
 
     expect(loginResponse.status).toBe(200);
+    expect(loginResponse.headers.get("cache-control")).toBe("no-store");
     expect(await loginResponse.clone().json()).toEqual({
       redirectTo: `${webOrigin}/account`
     });
@@ -128,6 +146,7 @@ describe("authentication contract", () => {
     );
 
     expect(sessionResponse.status).toBe(200);
+    expect(sessionResponse.headers.get("cache-control")).toBe("no-store");
     expect(await sessionResponse.json()).toEqual({
       user: {
         id: expect.any(String),
@@ -145,6 +164,16 @@ describe("authentication contract", () => {
     );
 
     expect(response.headers.get("location")).toBe(`${webOrigin}/account`);
+  });
+
+  test("prevents callback responses from being cached or referred", async () => {
+    const response = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.authCallback.path}`)
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
   });
 
   test("exposes the configured authentication method", async () => {
@@ -166,6 +195,7 @@ describe("authentication contract", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
     expect(await response.json()).toEqual({
       redirectTo: `${webOrigin}/`
@@ -205,7 +235,7 @@ describe("authentication contract", () => {
     expect(apiOpenApiDocument.paths[apiRoutes.authLogin.path].get).toBeDefined();
     expect(apiOpenApiDocument.paths[apiRoutes.authEmailLogin.path].post).toBeDefined();
     expect(apiOpenApiDocument.paths[apiRoutes.authRegister.path].post).toBeDefined();
-    expect(apiOpenApiDocument.paths[apiRoutes.authVerifyEmail.path].get).toBeDefined();
+    expect(apiOpenApiDocument.paths[apiRoutes.authVerifyEmail.path].post).toBeDefined();
     expect(apiOpenApiDocument.paths[apiRoutes.authCallback.path].get).toBeDefined();
     expect(apiOpenApiDocument.paths[apiRoutes.authLogout.path].post).toBeDefined();
   });
@@ -239,6 +269,7 @@ describe("API token management contract", () => {
       new Request(`http://localhost${apiRoutes.apiTokensList.path}`)
     );
     expect(response.status).toBe(401);
+    expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
   test("creates, lists, and revokes a scoped token", async () => {
@@ -259,6 +290,7 @@ describe("API token management contract", () => {
       })
     );
     expect(createResponse.status).toBe(201);
+    expect(createResponse.headers.get("cache-control")).toBe("no-store");
     const created = (await createResponse.json()) as {
       token: { id: string };
       secret: string;
@@ -273,6 +305,7 @@ describe("API token management contract", () => {
     const listed = (await listResponse.json()) as {
       tokens: Array<{ id: string; secret?: string }>;
     };
+    expect(listResponse.headers.get("cache-control")).toBe("no-store");
     expect(listed.tokens.some((token) => token.id === created.token.id)).toBe(true);
     expect(listed.tokens[0]).not.toHaveProperty("secret");
 
@@ -283,6 +316,7 @@ describe("API token management contract", () => {
       })
     );
     expect(revokeResponse.status).toBe(200);
+    expect(revokeResponse.headers.get("cache-control")).toBe("no-store");
   });
 
   test("rejects token mutations from another browser origin", async () => {

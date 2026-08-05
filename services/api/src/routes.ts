@@ -24,7 +24,7 @@ export const apiRoutes = {
     path: "/v1/auth/register"
   },
   authVerifyEmail: {
-    method: "GET",
+    method: "POST",
     path: "/v1/auth/verify-email"
   },
   authCallback: {
