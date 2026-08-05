@@ -750,7 +750,7 @@ export const apiOpenApiDocument = {
         operationId: "createGoal",
         summary: "Create a goal",
         description:
-          "Creates an active goal. The owner defaults to the caller and the title defaults to a concise form of the prompt.",
+          "Creates an active goal. The owner defaults to the caller and the title defaults to a concise form of the detailed description.",
         tags: ["Goals"],
         security: goalSecurity,
         requestBody: {
@@ -1120,6 +1120,19 @@ export const apiOpenApiDocument = {
         type: "string",
         enum: ["active", "completed", "paused", "archived"]
       },
+      GoalCriterion: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "description"],
+        properties: {
+          title: { type: "string", minLength: 1, maxLength: 200 },
+          description: {
+            type: "string",
+            minLength: 1,
+            maxLength: 10000
+          }
+        }
+      },
       GoalLabel: {
         type: "object",
         additionalProperties: false,
@@ -1157,11 +1170,11 @@ export const apiOpenApiDocument = {
           "id",
           "organizationId",
           "title",
-          "prompt",
+          "detailedDescription",
           "status",
           "ownerUserId",
           "labels",
-          "measurementMethod",
+          "criteria",
           "createdAt",
           "createdBy",
           "updatedAt",
@@ -1171,7 +1184,11 @@ export const apiOpenApiDocument = {
           id: { type: "string", format: "uuid" },
           organizationId: { type: "string", format: "uuid" },
           title: { type: "string", minLength: 1, maxLength: 200 },
-          prompt: { type: "string", minLength: 1, maxLength: 50000 },
+          detailedDescription: {
+            type: "string",
+            minLength: 1,
+            description: "A long-form description that may contain Markdown."
+          },
           status: { $ref: "#/components/schemas/GoalStatus" },
           ownerUserId: { type: "string", minLength: 1, maxLength: 200 },
           labels: {
@@ -1179,10 +1196,10 @@ export const apiOpenApiDocument = {
             maxItems: 20,
             items: { $ref: "#/components/schemas/GoalLabel" }
           },
-          measurementMethod: {
-            type: ["string", "null"],
-            minLength: 1,
-            maxLength: 10000
+          criteria: {
+            type: "array",
+            maxItems: 100,
+            items: { $ref: "#/components/schemas/GoalCriterion" }
           },
           createdAt: { type: "string", format: "date-time" },
           createdBy: { type: "string", minLength: 1 },
@@ -1210,10 +1227,14 @@ export const apiOpenApiDocument = {
       CreateGoalRequest: {
         type: "object",
         additionalProperties: false,
-        required: ["prompt"],
+        required: ["detailedDescription"],
         properties: {
           title: { type: "string", minLength: 1, maxLength: 200 },
-          prompt: { type: "string", minLength: 1, maxLength: 50000 },
+          detailedDescription: {
+            type: "string",
+            minLength: 1,
+            description: "A long-form description that may contain Markdown."
+          },
           ownerUserId: { type: "string", minLength: 1, maxLength: 200 },
           labelIds: {
             type: "array",
@@ -1221,10 +1242,10 @@ export const apiOpenApiDocument = {
             uniqueItems: true,
             items: { type: "string", format: "uuid" }
           },
-          measurementMethod: {
-            type: ["string", "null"],
-            minLength: 1,
-            maxLength: 10000
+          criteria: {
+            type: "array",
+            maxItems: 100,
+            items: { $ref: "#/components/schemas/GoalCriterion" }
           }
         }
       },
@@ -1234,7 +1255,11 @@ export const apiOpenApiDocument = {
         minProperties: 1,
         properties: {
           title: { type: "string", minLength: 1, maxLength: 200 },
-          prompt: { type: "string", minLength: 1, maxLength: 50000 },
+          detailedDescription: {
+            type: "string",
+            minLength: 1,
+            description: "A long-form description that may contain Markdown."
+          },
           status: { $ref: "#/components/schemas/GoalStatus" },
           ownerUserId: { type: "string", minLength: 1, maxLength: 200 },
           labelIds: {
@@ -1243,10 +1268,10 @@ export const apiOpenApiDocument = {
             uniqueItems: true,
             items: { type: "string", format: "uuid" }
           },
-          measurementMethod: {
-            type: ["string", "null"],
-            minLength: 1,
-            maxLength: 10000
+          criteria: {
+            type: "array",
+            maxItems: 100,
+            items: { $ref: "#/components/schemas/GoalCriterion" }
           }
         }
       },

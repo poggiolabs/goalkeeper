@@ -115,7 +115,13 @@ describe("goal REST contract", () => {
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          prompt: "Launch the first durable goals API",
+          detailedDescription: "Launch the first durable goals API",
+          criteria: [
+            {
+              title: "Available",
+              description: "The API serves durable goal state."
+            }
+          ],
           labelIds: [label.id]
         })
       })
@@ -144,7 +150,9 @@ describe("goal REST contract", () => {
           authorization: `Bearer ${readToken.secret}`,
           "content-type": "application/json"
         },
-        body: JSON.stringify({ prompt: "This must not be created" })
+        body: JSON.stringify({
+          detailedDescription: "This must not be created"
+        })
       })
     );
     expect(denied.status).toBe(403);
@@ -161,7 +169,9 @@ describe("goal REST contract", () => {
           authorization: `Bearer ${writeToken.secret}`,
           "content-type": "application/json"
         },
-        body: JSON.stringify({ prompt: "Create without a browser origin" })
+        body: JSON.stringify({
+          detailedDescription: "Create without a browser origin"
+        })
       })
     );
     expect(tokenCreate.status).toBe(201);
@@ -185,7 +195,7 @@ describe("goal REST contract", () => {
           origin: "https://example.net",
           "content-type": "application/json"
         },
-        body: JSON.stringify({ prompt: "Blocked" })
+        body: JSON.stringify({ detailedDescription: "Blocked" })
       })
     );
     expect(crossOrigin.status).toBe(403);

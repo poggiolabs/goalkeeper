@@ -1,5 +1,6 @@
 import type {
   Goal,
+  GoalCriterion,
   GoalLabel,
   GoalLabelRecord,
   GoalRecord,
@@ -11,6 +12,7 @@ import { GoalRepositoryError, goalStatuses } from "./types";
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const maximumLabelsPerGoal = 20;
+const maximumCriteriaPerGoal = 100;
 
 export class GoalError extends Error {
   constructor(
@@ -78,11 +80,11 @@ export function createGoalService(
         repository.insertGoal(
           {
             organizationId: access.organizationId,
-            title: input.title ?? generateGoalTitle(input.prompt),
-            prompt: input.prompt,
+            title: input.title ?? generateGoalTitle(input.detailedDescription),
+            detailedDescription: input.detailedDescription,
             status: "active",
             ownerUserId: input.ownerUserId,
-            measurementMethod: input.measurementMethod,
+            criteria: input.criteria,
             createdBy: access.userId,
             updatedBy: access.userId
           },
@@ -124,13 +126,11 @@ export function createGoalService(
           allowAll: access.writeAll,
           update: {
             title: input.title ?? existing.title,
-            prompt: input.prompt ?? existing.prompt,
+            detailedDescription:
+              input.detailedDescription ?? existing.detailedDescription,
             status: input.status ?? existing.status,
             ownerUserId,
-            measurementMethod:
-              input.measurementMethod === undefined
-                ? existing.measurementMethod
-                : input.measurementMethod,
+            criteria: input.criteria ?? existing.criteria,
             updatedBy: access.userId
           },
           labelIds: input.labelIds
@@ -258,38 +258,37 @@ async function requireMember(
 function normalizeGoalCreate(request: unknown, defaultOwnerUserId: string) {
   const candidate = objectWithKeys(request, [
     "title",
-    "prompt",
+    "detailedDescription",
     "ownerUserId",
     "labelIds",
-    "measurementMethod"
+    "criteria"
   ]);
   return {
     title:
       candidate.title === undefined
         ? null
         : requiredString(candidate.title, "goal title", 200),
-    prompt: requiredString(candidate.prompt, "goal prompt", 50_000, false),
+    detailedDescription: requiredLongText(
+      candidate.detailedDescription,
+      "goal detailed description"
+    ),
     ownerUserId:
       candidate.ownerUserId === undefined
         ? defaultOwnerUserId
         : requiredString(candidate.ownerUserId, "goal owner", 200),
     labelIds: labelIds(candidate.labelIds),
-    measurementMethod: optionalNullableString(
-      candidate.measurementMethod,
-      "measurement method",
-      10_000
-    )
+    criteria: goalCriteria(candidate.criteria)
   };
 }
 
 function normalizeGoalUpdate(request: unknown) {
   const candidate = objectWithKeys(request, [
     "title",
-    "prompt",
+    "detailedDescription",
     "status",
     "ownerUserId",
     "labelIds",
-    "measurementMethod"
+    "criteria"
   ]);
   if (Object.keys(candidate).length === 0) {
     throw new GoalError("empty_goal_update", "At least one update field is required");
@@ -299,10 +298,13 @@ function normalizeGoalUpdate(request: unknown) {
       candidate.title === undefined
         ? undefined
         : requiredString(candidate.title, "goal title", 200),
-    prompt:
-      candidate.prompt === undefined
+    detailedDescription:
+      candidate.detailedDescription === undefined
         ? undefined
-        : requiredString(candidate.prompt, "goal prompt", 50_000, false),
+        : requiredLongText(
+            candidate.detailedDescription,
+            "goal detailed description"
+          ),
     status:
       candidate.status === undefined ? undefined : goalStatus(candidate.status),
     ownerUserId:
@@ -311,14 +313,10 @@ function normalizeGoalUpdate(request: unknown) {
         : requiredString(candidate.ownerUserId, "goal owner", 200),
     labelIds:
       candidate.labelIds === undefined ? null : labelIds(candidate.labelIds),
-    measurementMethod:
-      candidate.measurementMethod === undefined
+    criteria:
+      candidate.criteria === undefined
         ? undefined
-        : optionalNullableString(
-            candidate.measurementMethod,
-            "measurement method",
-            10_000
-          )
+        : goalCriteria(candidate.criteria)
   };
 }
 
@@ -423,6 +421,61 @@ function optionalNullableString(
   return requiredString(value, field, maximumLength);
 }
 
+function requiredLongText(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new GoalError(
+      "invalid_goal_request",
+      `${field} must contain text`
+    );
+  }
+  return value;
+}
+
+function goalCriteria(value: unknown): GoalCriterion[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > maximumCriteriaPerGoal) {
+    throw new GoalError(
+      "invalid_goal_criteria",
+      `criteria must contain at most ${maximumCriteriaPerGoal} items`
+    );
+  }
+  return value.map((criterion, index) => {
+    if (!criterion || typeof criterion !== "object" || Array.isArray(criterion)) {
+      throw invalidCriterion(index, "must be an object");
+    }
+    const candidate = criterion as Record<string, unknown>;
+    const unknown = Object.keys(candidate).find(
+      (key) => key !== "title" && key !== "description"
+    );
+    if (unknown) {
+      throw invalidCriterion(index, `contains unsupported field: ${unknown}`);
+    }
+    try {
+      return {
+        title: requiredString(candidate.title, "criterion title", 200),
+        description: requiredString(
+          candidate.description,
+          "criterion description",
+          10_000,
+          false
+        )
+      };
+    } catch (error) {
+      if (error instanceof GoalError) {
+        throw invalidCriterion(index, error.message);
+      }
+      throw error;
+    }
+  });
+}
+
+function invalidCriterion(index: number, message: string): GoalError {
+  return new GoalError(
+    "invalid_goal_criteria",
+    `Criterion ${index + 1} ${message}`
+  );
+}
+
 function labelIds(value: unknown): string[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > maximumLabelsPerGoal) {
@@ -477,8 +530,8 @@ async function goalRepositoryOperation<T>(operation: () => Promise<T>): Promise<
   }
 }
 
-function generateGoalTitle(prompt: string): string {
-  const normalized = prompt.replace(/\s+/g, " ").trim();
+function generateGoalTitle(detailedDescription: string): string {
+  const normalized = detailedDescription.replace(/\s+/g, " ").trim();
   const sentence = (normalized.split(/\.\s/, 1)[0] || normalized).replace(
     /[.!?]+$/,
     ""

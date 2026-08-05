@@ -37,17 +37,30 @@ describe("goals and labels", () => {
       description: "Work that should happen next"
     });
     const { goal } = await service.createGoal(own, {
-      prompt: "Ship the goals API. Keep the state model small.",
+      detailedDescription:
+        "Ship the goals API.\n\n- Keep the state model small.\n- Preserve Markdown.",
       labelIds: [label.id],
-      measurementMethod: "The public CRUD contract passes its tests."
+      criteria: [
+        {
+          title: "Contract passes",
+          description: "The public CRUD contract passes its tests."
+        }
+      ]
     });
 
     expect(goal).toMatchObject({
       title: "Ship the goals API",
-      prompt: "Ship the goals API. Keep the state model small.",
+      detailedDescription:
+        "Ship the goals API.\n\n- Keep the state model small.\n- Preserve Markdown.",
       status: "active",
       ownerUserId: "user-1",
-      labels: [{ id: label.id, name: "Priority" }]
+      labels: [{ id: label.id, name: "Priority" }],
+      criteria: [
+        {
+          title: "Contract passes",
+          description: "The public CRUD contract passes its tests."
+        }
+      ]
     });
 
     const renamed = await service.updateLabel(own, label.id, {
@@ -65,7 +78,7 @@ describe("goals and labels", () => {
     const { service, own, all } = createHarness();
     const other = await service.createGoal(all, {
       title: "Team goal",
-      prompt: "Achieve the team outcome",
+      detailedDescription: "Achieve the team outcome",
       ownerUserId: "user-2"
     });
 
@@ -75,13 +88,13 @@ describe("goals and labels", () => {
     });
     await expect(
       service.createGoal(own, {
-        prompt: "Assign without authority",
+        detailedDescription: "Assign without authority",
         ownerUserId: "user-2"
       })
     ).rejects.toMatchObject({ code: "goal_owner_forbidden" });
     await expect(
       service.createGoal(all, {
-        prompt: "Assign outside the organization",
+        detailedDescription: "Assign outside the organization",
         ownerUserId: "not-a-member"
       })
     ).rejects.toMatchObject({ code: "invalid_goal_owner" });
@@ -91,10 +104,12 @@ describe("goals and labels", () => {
     const { service, all } = createHarness();
     const { label } = await service.createLabel(all, { name: "Revenue" });
     const first = await service.createGoal(all, {
-      prompt: "Increase expansion revenue",
+      detailedDescription: "Increase expansion revenue",
       labelIds: [label.id]
     });
-    await service.createGoal(all, { prompt: "Reduce support latency" });
+    await service.createGoal(all, {
+      detailedDescription: "Reduce support latency"
+    });
     await service.updateGoal(all, first.goal.id, { status: "paused" });
 
     expect(
@@ -116,7 +131,7 @@ describe("goals and labels", () => {
     const { service, all } = createHarness();
     await expect(
       service.createGoal(all, {
-        prompt: "Do not smuggle execution policy into goal state",
+        detailedDescription: "Do not smuggle execution policy into goal state",
         schedules: []
       })
     ).rejects.toMatchObject({ code: "invalid_goal_request" });
@@ -125,7 +140,7 @@ describe("goals and labels", () => {
     const { label } = await service.createLabel(otherAccess, { name: "Other" });
     await expect(
       service.createGoal(all, {
-        prompt: "Keep tenant references isolated",
+        detailedDescription: "Keep tenant references isolated",
         labelIds: [label.id]
       })
     ).rejects.toMatchObject({ code: "invalid_goal_labels" });
@@ -133,7 +148,9 @@ describe("goals and labels", () => {
 
   test("requires non-empty patches and case-insensitive unique label names", async () => {
     const { service, all } = createHarness();
-    const { goal } = await service.createGoal(all, { prompt: "A valid goal" });
+    const { goal } = await service.createGoal(all, {
+      detailedDescription: "A valid goal"
+    });
     await expect(service.updateGoal(all, goal.id, {})).rejects.toMatchObject({
       code: "empty_goal_update"
     });
@@ -141,5 +158,21 @@ describe("goals and labels", () => {
     await expect(
       service.createLabel(all, { name: "customer" })
     ).rejects.toMatchObject({ code: "goal_label_exists" });
+  });
+
+  test("validates structured goal criteria", async () => {
+    const { service, all } = createHarness();
+    await expect(
+      service.createGoal(all, {
+        detailedDescription: "A goal with malformed criteria",
+        criteria: [{ title: "Missing description" }]
+      })
+    ).rejects.toMatchObject({ code: "invalid_goal_criteria" });
+    await expect(
+      service.createGoal(all, {
+        detailedDescription: "A goal with an unsupported criterion field",
+        criteria: [{ title: "Valid", description: "Valid", score: 1 }]
+      })
+    ).rejects.toMatchObject({ code: "invalid_goal_criteria" });
   });
 });

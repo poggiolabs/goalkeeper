@@ -1,5 +1,6 @@
 import { SQL } from "bun";
 import type {
+  GoalCriterion,
   GoalLabelRecord,
   GoalRecord,
   GoalRepository,
@@ -11,10 +12,10 @@ type GoalRow = {
   id: string;
   organization_id: string;
   title: string;
-  prompt: string;
+  detailed_description: string;
   status: GoalStatus;
   owner_user_id: string;
-  measurement_method: string | null;
+  criteria: GoalCriterion[] | string;
   created_at: Date | string;
   created_by: string;
   updated_at: Date | string;
@@ -41,7 +42,7 @@ export function createPostgresGoalRepository(sql: SQL): GoalRepository {
         from goals g
         where g.organization_id = ${organizationId}::uuid
           and (${ownerUserId}::text is null or g.owner_user_id = ${ownerUserId})
-          and (${status}::text is null or g.status = ${status})
+          and (${status}::goal_status is null or g.status = ${status}::goal_status)
           and (
             ${labelId}::uuid is null
             or exists (
@@ -72,19 +73,19 @@ export function createPostgresGoalRepository(sql: SQL): GoalRepository {
           insert into goals (
             organization_id,
             title,
-            prompt,
+            detailed_description,
             status,
             owner_user_id,
-            measurement_method,
+            criteria,
             created_by,
             updated_by
           ) values (
             ${record.organizationId}::uuid,
             ${record.title},
-            ${record.prompt},
-            ${record.status},
+            ${record.detailedDescription},
+            ${record.status}::goal_status,
             ${record.ownerUserId},
-            ${record.measurementMethod},
+            ${record.criteria},
             ${record.createdBy},
             ${record.updatedBy}
           )
@@ -120,10 +121,10 @@ export function createPostgresGoalRepository(sql: SQL): GoalRepository {
         const [row] = await transaction<GoalRow[]>`
           update goals
           set title = ${update.title},
-              prompt = ${update.prompt},
-              status = ${update.status},
+              detailed_description = ${update.detailedDescription},
+              status = ${update.status}::goal_status,
               owner_user_id = ${update.ownerUserId},
-              measurement_method = ${update.measurementMethod},
+              criteria = ${update.criteria},
               updated_by = ${update.updatedBy},
               updated_at = now()
           where id = ${goalId}::uuid
@@ -306,16 +307,24 @@ function toGoalRecord(row: GoalRow, labels: GoalLabelRecord[]): GoalRecord {
     id: row.id,
     organizationId: row.organization_id,
     title: row.title,
-    prompt: row.prompt,
+    detailedDescription: row.detailed_description,
     status: row.status,
     ownerUserId: row.owner_user_id,
     labels,
-    measurementMethod: row.measurement_method,
+    criteria: toCriteria(row.criteria),
     createdAt: toDate(row.created_at),
     createdBy: row.created_by,
     updatedAt: toDate(row.updated_at),
     updatedBy: row.updated_by
   };
+}
+
+function toCriteria(value: GoalRow["criteria"]): GoalCriterion[] {
+  const criteria: GoalCriterion[] =
+    typeof value === "string"
+      ? (JSON.parse(value) as GoalCriterion[])
+      : value;
+  return criteria.map((criterion) => ({ ...criterion }));
 }
 
 function toLabelRecord(row: GoalLabelRow): GoalLabelRecord {

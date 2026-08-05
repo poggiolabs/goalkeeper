@@ -1013,7 +1013,7 @@
       "post": {
         "operationId": "createGoal",
         "summary": "Create a goal",
-        "description": "Creates an active goal. The owner defaults to the caller and the title defaults to a concise form of the prompt.",
+        "description": "Creates an active goal. The owner defaults to the caller and the title defaults to a concise form of the detailed description.",
         "tags": [
           "Goals"
         ],
@@ -2089,6 +2089,26 @@
           "archived"
         ]
       },
+      "GoalCriterion": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "description"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          }
+        }
+      },
       "GoalLabel": {
         "type": "object",
         "additionalProperties": false,
@@ -2158,11 +2178,11 @@
           "id",
           "organizationId",
           "title",
-          "prompt",
+          "detailedDescription",
           "status",
           "ownerUserId",
           "labels",
-          "measurementMethod",
+          "criteria",
           "createdAt",
           "createdBy",
           "updatedAt",
@@ -2182,10 +2202,10 @@
             "minLength": 1,
             "maxLength": 200
           },
-          "prompt": {
+          "detailedDescription": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 50000
+            "description": "A long-form description that may contain Markdown."
           },
           "status": {
             "$ref": "#/components/schemas/GoalStatus"
@@ -2202,13 +2222,12 @@
               "$ref": "#/components/schemas/GoalLabel"
             }
           },
-          "measurementMethod": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1,
-            "maxLength": 10000
+          "criteria": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/GoalCriterion"
+            }
           },
           "createdAt": {
             "type": "string",
@@ -2259,7 +2278,7 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "prompt"
+          "detailedDescription"
         ],
         "properties": {
           "title": {
@@ -2267,10 +2286,10 @@
             "minLength": 1,
             "maxLength": 200
           },
-          "prompt": {
+          "detailedDescription": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 50000
+            "description": "A long-form description that may contain Markdown."
           },
           "ownerUserId": {
             "type": "string",
@@ -2286,13 +2305,12 @@
               "format": "uuid"
             }
           },
-          "measurementMethod": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1,
-            "maxLength": 10000
+          "criteria": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/GoalCriterion"
+            }
           }
         }
       },
@@ -2306,10 +2324,10 @@
             "minLength": 1,
             "maxLength": 200
           },
-          "prompt": {
+          "detailedDescription": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 50000
+            "description": "A long-form description that may contain Markdown."
           },
           "status": {
             "$ref": "#/components/schemas/GoalStatus"
@@ -2328,13 +2346,12 @@
               "format": "uuid"
             }
           },
-          "measurementMethod": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1,
-            "maxLength": 10000
+          "criteria": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/GoalCriterion"
+            }
           }
         }
       },

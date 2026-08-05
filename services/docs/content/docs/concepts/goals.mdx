@@ -10,11 +10,11 @@ responsible for the work.
 Goals should be specific enough to evaluate, durable across individual agent
 runs, and explicit about any constraints that affect completion.
 
-Each goal belongs to an organization and records a short title, a durable
-prompt, an accountable organization member, an optional measurement method,
-and a lifecycle status: `active`, `paused`, `completed`, or `archived`.
-Organization-defined labels provide stable taxonomy and can be renamed without
-changing goal references.
+Each goal belongs to an organization and records a short title, a long-form
+detailed description that may contain Markdown, an accountable organization
+member, an ordered list of titled success criteria, and a lifecycle status:
+`active`, `paused`, `completed`, or `archived`. Organization-defined labels
+provide stable taxonomy and can be renamed without changing goal references.
 
 Schedules and execution runs are intentionally outside the goal state model.
 They can be introduced as separate domains if their lifecycle and ownership

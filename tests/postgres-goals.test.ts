@@ -55,7 +55,7 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
       color: "#22c55e"
     });
     const { goal } = await goals.createGoal(access, {
-      prompt: "Ship the durable goal domain",
+      detailedDescription: "Ship the durable goal domain",
       labelIds: [label.id]
     });
     expect((await goals.getGoal(access, goal.id)).goal).toMatchObject({
@@ -66,11 +66,34 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
 
     const updated = await goals.updateGoal(access, goal.id, {
       status: "completed",
-      measurementMethod: "All database checks pass"
+      criteria: [
+        {
+          title: "Database checks",
+          description: "All database checks pass"
+        }
+      ]
     });
     expect(updated.goal).toMatchObject({
       status: "completed",
-      measurementMethod: "All database checks pass"
+      criteria: [
+        {
+          title: "Database checks",
+          description: "All database checks pass"
+        }
+      ]
+    });
+    const [statusColumn] = await database<
+      { data_type: string; udt_name: string }[]
+    >`
+      select data_type, udt_name
+      from information_schema.columns
+      where table_schema = ${schema}
+        and table_name = 'goals'
+        and column_name = 'status'
+    `;
+    expect(statusColumn).toEqual({
+      data_type: "USER-DEFINED",
+      udt_name: "goal_status"
     });
     await expect(goals.deleteLabel(access, label.id)).rejects.toMatchObject({
       code: "goal_label_in_use"

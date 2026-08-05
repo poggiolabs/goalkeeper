@@ -498,6 +498,62 @@ export async function migrateApiDatabase(sql: SQL): Promise<void> {
         values ('007_goals_and_labels')
       `;
     }
+
+    const goalFieldsApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '008_goal_fields'
+    `;
+    if (goalFieldsApplied.length === 0) {
+      await transaction`
+        create type goal_status as enum (
+          'active',
+          'completed',
+          'paused',
+          'archived'
+        )
+      `;
+      await transaction`
+        alter table goals
+          drop constraint goals_status_check,
+          alter column status drop default,
+          alter column status type goal_status using status::goal_status,
+          alter column status set default 'active'::goal_status
+      `;
+      await transaction`
+        alter table goals
+        rename column prompt to detailed_description
+      `;
+      await transaction`
+        alter table goals
+          drop constraint goals_prompt_length_check,
+          add constraint goals_detailed_description_check
+            check (char_length(detailed_description) >= 1),
+          add column criteria jsonb not null default '[]'::jsonb,
+          add constraint goals_criteria_array_check
+            check (
+              jsonb_typeof(criteria) = 'array'
+              and jsonb_array_length(criteria) <= 100
+            )
+      `;
+      await transaction`
+        update goals
+        set criteria = jsonb_build_array(
+          jsonb_build_object(
+            'title', 'Measurement method',
+            'description', measurement_method
+          )
+        )
+        where measurement_method is not null
+      `;
+      await transaction`
+        alter table goals
+          drop constraint goals_measurement_method_length_check,
+          drop column measurement_method
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('008_goal_fields')
+      `;
+    }
   });
 }
 

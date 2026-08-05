@@ -9,6 +9,11 @@ export class GoalRepositoryError extends Error {
 
 export type GoalStatus = (typeof goalStatuses)[number];
 
+export type GoalCriterion = {
+  title: string;
+  description: string;
+};
+
 export type GoalLabel = {
   id: string;
   organizationId: string;
@@ -25,11 +30,11 @@ export type Goal = {
   id: string;
   organizationId: string;
   title: string;
-  prompt: string;
+  detailedDescription: string;
   status: GoalStatus;
   ownerUserId: string;
   labels: GoalLabel[];
-  measurementMethod: string | null;
+  criteria: GoalCriterion[];
   createdAt: string;
   createdBy: string;
   updatedAt: string;
@@ -66,10 +71,10 @@ export type NewGoalLabelRecord = Omit<
 export type GoalUpdateRecord = Pick<
   GoalRecord,
   | "title"
-  | "prompt"
+  | "detailedDescription"
   | "status"
   | "ownerUserId"
-  | "measurementMethod"
+  | "criteria"
   | "updatedBy"
 >;
 

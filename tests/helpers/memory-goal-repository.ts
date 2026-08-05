@@ -207,7 +207,11 @@ export class MemoryGoalRepository implements GoalRepository {
 }
 
 function copyGoal(goal: GoalRecord): GoalRecord {
-  return { ...goal, labels: goal.labels.map(copyLabel) };
+  return {
+    ...goal,
+    labels: goal.labels.map(copyLabel),
+    criteria: goal.criteria.map((criterion) => ({ ...criterion }))
+  };
 }
 
 function copyLabel(label: GoalLabelRecord): GoalLabelRecord {
