@@ -174,4 +174,52 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
       goals.createLabel(secondAccess, { name: "customer" })
     ).resolves.toMatchObject({ label: { name: "customer" } });
   });
+
+  test("resumes migration when the composite goal index already exists", async () => {
+    const compatibilitySchema = `goals_compat_${crypto
+      .randomUUID()
+      .replaceAll("-", "")}`;
+    await admin.unsafe(`create schema ${compatibilitySchema}`);
+    const scopedUrl = new URL(testDatabaseUrl!);
+    scopedUrl.searchParams.set(
+      "options",
+      `-csearch_path=${compatibilitySchema}`
+    );
+    const compatibilityDatabase = new SQL(scopedUrl.toString());
+
+    try {
+      await migrateApiDatabase(compatibilityDatabase);
+      await compatibilityDatabase.begin(async (transaction) => {
+        await transaction`delete from api_schema_migrations where id = '009_goal_updates'`;
+        await transaction`drop table goal_updates`;
+        await transaction`alter table goal_labels rename column created_by_user_id to created_by`;
+        await transaction`alter table goal_labels rename column updated_by_user_id to updated_by`;
+        await transaction`alter table goals rename column created_by_user_id to created_by`;
+        await transaction`alter table goals rename column updated_by_user_id to updated_by`;
+        await transaction`alter table goals drop column revision`;
+        await transaction`drop type goal_actor_kind`;
+        await transaction`drop type goal_authn_kind`;
+      });
+
+      await expect(
+        migrateApiDatabase(compatibilityDatabase)
+      ).resolves.toBeUndefined();
+      const [state] = await compatibilityDatabase<
+        { migration_applied: boolean; updates_table: string | null }[]
+      >`
+        select
+          exists (
+            select 1 from api_schema_migrations where id = '009_goal_updates'
+          ) as migration_applied,
+          to_regclass('goal_updates')::text as updates_table
+      `;
+      expect(state).toEqual({
+        migration_applied: true,
+        updates_table: "goal_updates"
+      });
+    } finally {
+      await compatibilityDatabase.close();
+      await admin.unsafe(`drop schema if exists ${compatibilitySchema} cascade`);
+    }
+  });
 });

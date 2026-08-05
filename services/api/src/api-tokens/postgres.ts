@@ -589,9 +589,11 @@ export async function migrateApiDatabase(sql: SQL): Promise<void> {
       await transaction`
         alter table goals
           add column revision bigint not null default 1,
-          add constraint goals_revision_check check (revision >= 1),
-          add constraint goals_organization_id_id_key
-            unique (organization_id, id)
+          add constraint goals_revision_check check (revision >= 1)
+      `;
+      await transaction`
+        create unique index if not exists goals_organization_id_id_key
+        on goals (organization_id, id)
       `;
       await transaction`
         create table goal_updates (
