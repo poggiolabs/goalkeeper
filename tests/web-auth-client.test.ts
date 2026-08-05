@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   createOrganization,
+  getAuthConfiguration,
   listApiTokens,
   listOrganizationMembers,
   loginWithEmail,
@@ -17,6 +18,17 @@ afterEach(() => {
 });
 
 describe("web authentication client", () => {
+  test("rejects a non-API auth configuration response with a stable error", async () => {
+    globalThis.fetch = async () =>
+      new Response("<!doctype html><title>Goalkeeper</title>", {
+        headers: { "content-type": "text/html" }
+      });
+
+    await expect(
+      getAuthConfiguration("http://localhost:3000")
+    ).rejects.toThrow("Unable to load authentication settings.");
+  });
+
   test("preserves invalid-credential messages from email login", async () => {
     globalThis.fetch = async () =>
       Response.json(

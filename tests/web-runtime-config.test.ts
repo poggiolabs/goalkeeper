@@ -21,6 +21,13 @@ describe("web runtime configuration", () => {
     expect(resolveConfiguredUrl(undefined, undefined, "/v1")).toBe("/v1");
   });
 
+  test("supplies local service URLs through the Vite development environment", async () => {
+    expect(await Bun.file(".env.development").text()).toBe(
+      "VITE_API_URL=http://localhost:3001\n" +
+        "VITE_DOCS_URL=http://localhost:3003/docs\n"
+    );
+  });
+
   test("keeps the checked-in placeholder aligned with release packaging", async () => {
     expect(await Bun.file("apps/web/public/runtime-config.js").text()).toBe(
       emptyRuntimeConfig

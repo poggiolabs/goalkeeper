@@ -75,7 +75,19 @@ export async function getAuthConfiguration(
 ): Promise<AuthConfiguration> {
   const response = await fetch(new URL("/v1/auth/config", apiUrl), { signal });
   if (!response.ok) throw new Error("Unable to load authentication settings.");
-  return response.json() as Promise<AuthConfiguration>;
+
+  try {
+    const configuration = (await response.json()) as Partial<AuthConfiguration>;
+    if (
+      configuration.method !== "redirect" &&
+      configuration.method !== "email"
+    ) {
+      throw new Error("Invalid authentication configuration");
+    }
+    return configuration as AuthConfiguration;
+  } catch {
+    throw new Error("Unable to load authentication settings.");
+  }
 }
 
 export async function loginWithEmail(
