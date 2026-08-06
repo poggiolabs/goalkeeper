@@ -125,7 +125,7 @@
   }
 }
 
-.goal-markdown-editor {
+.goal-markdown-editor.mdxeditor {
   --basePageBg: transparent;
   --baseBase: var(--background);
   --baseBgSubtle: var(--secondary);
@@ -159,4 +159,5 @@
 
 .goal-markdown-editor .mdxeditor-root-contenteditable {
   background: transparent;
+  color: var(--foreground);
 }
