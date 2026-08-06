@@ -3,6 +3,7 @@ set -eu
 
 api_url="${GOALKEEPER_API_URL:-}"
 docs_url="${GOALKEEPER_DOCS_URL:-}"
+mcp_url="${GOALKEEPER_MCP_URL:-}"
 output_path="${GOALKEEPER_RUNTIME_CONFIG_PATH:-/usr/share/nginx/html/runtime-config.js}"
 
 validate_url() {
@@ -26,8 +27,10 @@ validate_url() {
 
 validate_url GOALKEEPER_API_URL "$api_url"
 validate_url GOALKEEPER_DOCS_URL "$docs_url"
+validate_url GOALKEEPER_MCP_URL "$mcp_url"
 
 encoded_api_url="$(printf '%s' "$api_url" | base64 | tr -d '\n')"
 encoded_docs_url="$(printf '%s' "$docs_url" | base64 | tr -d '\n')"
-printf 'window.__GOALKEEPER_CONFIG__ = Object.freeze({"apiBaseUrl":atob("%s"),"docsUrl":atob("%s")});\n' \
-    "$encoded_api_url" "$encoded_docs_url" > "$output_path"
+encoded_mcp_url="$(printf '%s' "$mcp_url" | base64 | tr -d '\n')"
+printf 'window.__GOALKEEPER_CONFIG__ = Object.freeze({"apiBaseUrl":atob("%s"),"docsUrl":atob("%s"),"mcpUrl":atob("%s")});\n' \
+    "$encoded_api_url" "$encoded_docs_url" "$encoded_mcp_url" > "$output_path"

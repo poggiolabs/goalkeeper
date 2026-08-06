@@ -1,4 +1,19 @@
-export const goalStatuses = ["active", "completed", "paused", "archived"] as const;
+export const goalStatuses = [
+  "active",
+  "completed",
+  "paused",
+  "archived"
+] as const;
+
+export const goalTimeframeKinds = [
+  "unspecified",
+  "deadline",
+  "continuous"
+] as const;
+
+export const goalEvaluationResults = ["met", "not_met", "unknown"] as const;
+
+export const goalHealthValues = ["on_track", "at_risk", "off_track"] as const;
 
 export class GoalRepositoryError extends Error {
   constructor(
@@ -14,6 +29,19 @@ export class GoalRepositoryError extends Error {
 }
 
 export type GoalStatus = (typeof goalStatuses)[number];
+export type GoalTimeframeKind = (typeof goalTimeframeKinds)[number];
+export type GoalEvaluationResult = (typeof goalEvaluationResults)[number];
+export type GoalHealth = (typeof goalHealthValues)[number];
+
+export type GoalTimeframe =
+  | { kind: "unspecified" }
+  | { kind: "continuous" }
+  | { kind: "deadline"; targetDate: string };
+
+export type GoalEvaluation = {
+  result: GoalEvaluationResult;
+  asOf: string;
+};
 
 export type GoalCriterion = {
   title: string;
@@ -60,7 +88,10 @@ export type Goal = {
   title: string;
   detailedDescription: string;
   status: GoalStatus;
-  ownerUserId: string;
+  health: GoalHealth | null;
+  timeframe: GoalTimeframe;
+  currentEvaluation: GoalEvaluation | null;
+  ownerUserId: string | null;
   labels: GoalLabel[];
   criteria: GoalCriterion[];
   revision: number;
@@ -76,6 +107,8 @@ export type GoalUpdate = GoalAttribution & {
   goalId: string;
   revision: number;
   status: GoalStatus;
+  health: GoalHealth | null;
+  evaluation: GoalEvaluation | null;
   summary: string;
   details: string;
   idempotencyKey: string;
@@ -92,11 +125,16 @@ export type GoalLabelRecord = Omit<
 
 export type GoalRecord = Omit<
   Goal,
-  "labels" | "createdAt" | "updatedAt"
+  "labels" | "currentEvaluation" | "createdAt" | "updatedAt"
 > & {
   labels: GoalLabelRecord[];
+  currentEvaluation: GoalEvaluationRecord | null;
   createdAt: Date;
   updatedAt: Date;
+};
+
+export type GoalEvaluationRecord = Omit<GoalEvaluation, "asOf"> & {
+  asOf: Date;
 };
 
 export type NewGoalRecord = Omit<
@@ -113,12 +151,17 @@ export type GoalUpdateRecord = Pick<
   GoalRecord,
   | "title"
   | "detailedDescription"
+  | "timeframe"
   | "ownerUserId"
   | "criteria"
   | "updatedByUserId"
 >;
 
-export type GoalStatusUpdateRecord = Omit<GoalUpdate, "createdAt"> & {
+export type GoalStatusUpdateRecord = Omit<
+  GoalUpdate,
+  "evaluation" | "createdAt"
+> & {
+  evaluation: GoalEvaluationRecord | null;
   createdAt: Date;
 };
 
@@ -127,6 +170,7 @@ export interface GoalRepository {
     organizationId: string;
     ownerUserId: string | null;
     status: GoalStatus | null;
+    health: GoalHealth | null;
     labelId: string | null;
   }): Promise<GoalRecord[]>;
   getGoal(organizationId: string, goalId: string): Promise<GoalRecord | null>;
@@ -143,6 +187,12 @@ export interface GoalRepository {
     update: GoalUpdateRecord;
     labelIds: string[] | null;
   }): Promise<GoalRecord | null>;
+  deleteGoal(input: {
+    organizationId: string;
+    goalId: string;
+    actorUserId: string;
+    allowAll: boolean;
+  }): Promise<boolean>;
   listUpdates(input: {
     organizationId: string;
     goalId: string;
@@ -154,6 +204,8 @@ export interface GoalRepository {
     allowAll: boolean;
     expectedRevision: number;
     status: GoalStatus;
+    health: GoalHealth | null;
+    evaluation: GoalEvaluationRecord | null;
     summary: string;
     details: string;
     idempotencyKey: string;

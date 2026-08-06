@@ -62,13 +62,39 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
     });
     const { goal } = await goals.createGoal(access, {
       detailedDescription: "Ship the durable goal domain",
+      timeframe: { kind: "deadline", targetDate: "2026-09-30" },
       labelIds: [label.id]
+    });
+    const { goal: removable } = await goals.createGoal(access, {
+      title: "Temporary outcome",
+      detailedDescription: "Delete this goal after persistence is verified.",
+      timeframe: { kind: "continuous" }
     });
     expect((await goals.getGoal(access, goal.id)).goal).toMatchObject({
       id: goal.id,
+      health: null,
       ownerUserId: owner.id,
       labels: [{ id: label.id, name: "Launch" }]
     });
+    expect((await goals.getGoal(access, removable.id)).goal).toMatchObject({
+      id: removable.id,
+      status: "active",
+      revision: 1
+    });
+    expect(
+      (await goals.updateGoal(access, removable.id, { ownerUserId: null })).goal
+        .ownerUserId
+    ).toBeNull();
+    await goals.deleteGoal(access, removable.id);
+    await expect(goals.getGoal(access, removable.id)).rejects.toMatchObject({
+      code: "goal_not_found"
+    });
+    const [deletedHistory] = await database<{ count: number }[]>`
+      select count(*)::int as count
+      from goal_updates
+      where goal_id = ${removable.id}::uuid
+    `;
+    expect(deletedHistory?.count).toBe(0);
 
     const updated = await goals.updateGoal(access, goal.id, {
       criteria: [
@@ -87,16 +113,37 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
         }
       ]
     });
+    const healthUpdate = await goals.reportUpdate(access, goal.id, {
+      status: "active",
+      health: "at_risk",
+      summary: "Database checks delayed",
+      details: "The persistence checks are still running.",
+      expectedRevision: 1,
+      idempotencyKey: "database-contract-at-risk"
+    });
+    expect(healthUpdate.update).toMatchObject({
+      revision: 2,
+      status: "active",
+      health: "at_risk"
+    });
+    expect(
+      (await goals.listGoals(access, new URLSearchParams({ health: "at_risk" })))
+        .goals.map((candidate) => candidate.id)
+    ).toEqual([goal.id]);
+
     const { update } = await goals.reportUpdate(access, goal.id, {
       status: "completed",
+      evaluation: { result: "met", asOf: "2026-09-30T17:00:00.000Z" },
       summary: "Database contract complete",
       details: "The goal and label persistence checks pass.",
-      expectedRevision: 1,
+      expectedRevision: 2,
       idempotencyKey: "database-contract-complete"
     });
     expect(update).toMatchObject({
-      revision: 2,
+      revision: 3,
       status: "completed",
+      health: null,
+      evaluation: { result: "met", asOf: "2026-09-30T17:00:00.000Z" },
       authorityUserId: owner.id,
       actor: { kind: "user", id: owner.id, runId: null },
       authentication: {
@@ -104,19 +151,32 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
         subjectId: access.authentication.subjectId
       }
     });
-    expect((await goals.listUpdates(access, goal.id)).updates).toHaveLength(2);
-    const [statusColumn] = await database<
+    expect((await goals.getGoal(access, goal.id)).goal).toMatchObject({
+      health: null,
+      timeframe: { kind: "deadline", targetDate: "2026-09-30" },
+      currentEvaluation: {
+        result: "met",
+        asOf: "2026-09-30T17:00:00.000Z"
+      }
+    });
+    expect((await goals.listUpdates(access, goal.id)).updates).toHaveLength(3);
+    const [statusColumn, healthColumn] = await database<
       { data_type: string; udt_name: string }[]
     >`
       select data_type, udt_name
       from information_schema.columns
       where table_schema = ${schema}
         and table_name = 'goals'
-        and column_name = 'status'
+        and column_name in ('status', 'health')
+      order by column_name desc
     `;
     expect(statusColumn).toEqual({
       data_type: "USER-DEFINED",
       udt_name: "goal_status"
+    });
+    expect(healthColumn).toEqual({
+      data_type: "USER-DEFINED",
+      udt_name: "goal_health"
     });
     await expect(goals.deleteLabel(access, label.id)).rejects.toMatchObject({
       code: "goal_label_in_use"
@@ -127,12 +187,78 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL goals", () => {
       status: "archived",
       summary: "Goal archived",
       details: "The historical record remains available.",
-      expectedRevision: 2,
+      expectedRevision: 3,
       idempotencyKey: "archive-completed-goal"
     });
     await expect(goals.getGoal(access, goal.id)).resolves.toMatchObject({
-      goal: { status: "archived", revision: 3 }
+      goal: { status: "archived", health: null, revision: 4 }
     });
+  });
+
+  test("archives legacy persisted drafts and removes the draft enum value", async () => {
+    const owner = {
+      id: crypto.randomUUID(),
+      displayName: "Legacy Draft Owner",
+      email: "legacy-draft@example.com"
+    };
+    const context = await organizations.ensureForUser(owner);
+    const access: GoalAccess = {
+      userId: owner.id,
+      organizationId: context.activeOrganizationId,
+      readAll: true,
+      writeAll: true,
+      actor: { kind: "user", id: owner.id, runId: null },
+      authentication: { kind: "session", subjectId: crypto.randomUUID() },
+      clientInfo: null
+    };
+    const { goal } = await goals.createGoal(access, {
+      detailedDescription: "Preserve an object created by the former draft model",
+      timeframe: { kind: "continuous" }
+    });
+
+    await database`alter type goal_status add value 'draft' before 'active'`;
+    await database`
+      update goals set status = 'draft'::goal_status where id = ${goal.id}::uuid
+    `;
+    await database`
+      update goal_updates
+      set status = 'draft'::goal_status
+      where goal_id = ${goal.id}::uuid
+    `;
+    await database`
+      delete from api_schema_migrations where id = '013_remove_goal_draft_status'
+    `;
+
+    await migrateApiDatabase(database);
+
+    const [migrated] = await database<
+      { goal_status: string; update_status: string }[]
+    >`
+      select
+        goals.status::text as goal_status,
+        goal_updates.status::text as update_status
+      from goals
+      join goal_updates on goal_updates.goal_id = goals.id
+      where goals.id = ${goal.id}::uuid
+    `;
+    expect(migrated).toEqual({
+      goal_status: "archived",
+      update_status: "archived"
+    });
+    const enumValues = await database<{ enumlabel: string }[]>`
+      select pg_enum.enumlabel
+      from pg_enum
+      join pg_type on pg_type.oid = pg_enum.enumtypid
+      where pg_type.typname = 'goal_status'
+        and pg_type.typnamespace = current_schema()::regnamespace
+      order by pg_enum.enumsortorder
+    `;
+    expect(enumValues.map((row) => row.enumlabel)).toEqual([
+      "active",
+      "completed",
+      "paused",
+      "archived"
+    ]);
   });
 
   test("enforces case-insensitive label uniqueness per organization", async () => {

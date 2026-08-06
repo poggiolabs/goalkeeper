@@ -5,11 +5,15 @@ import type {
   GoalAuthentication,
   GoalClientInfo,
   GoalCriterion,
+  GoalEvaluationRecord,
+  GoalEvaluationResult,
+  GoalHealth,
   GoalLabelRecord,
   GoalRecord,
   GoalRepository,
   GoalStatusUpdateRecord,
-  GoalStatus
+  GoalStatus,
+  GoalTimeframeKind
 } from "./types";
 import { GoalRepositoryError } from "./types";
 
@@ -19,7 +23,12 @@ type GoalRow = {
   title: string;
   detailed_description: string;
   status: GoalStatus;
-  owner_user_id: string;
+  health: GoalHealth | null;
+  timeframe_kind: GoalTimeframeKind;
+  target_date: Date | string | null;
+  current_evaluation_result: GoalEvaluationResult | null;
+  current_evaluation_as_of: Date | string | null;
+  owner_user_id: string | null;
   criteria: GoalCriterion[] | string;
   revision: number | string;
   created_at: Date | string;
@@ -46,6 +55,9 @@ type GoalUpdateRow = {
   goal_id: string;
   revision: number | string;
   status: GoalStatus;
+  health: GoalHealth | null;
+  evaluation_result: GoalEvaluationResult | null;
+  evaluation_as_of: Date | string | null;
   summary: string;
   details: string;
   authority_user_id: string;
@@ -65,6 +77,8 @@ type NewGoalUpdateInput = {
   goalId: string;
   revision: number;
   status: GoalStatus;
+  health: GoalHealth | null;
+  evaluation: GoalEvaluationRecord | null;
   summary: string;
   details: string;
   idempotencyKey: string;
@@ -73,13 +87,14 @@ type NewGoalUpdateInput = {
 
 export function createPostgresGoalRepository(sql: SQL): GoalRepository {
   return {
-    async listGoals({ organizationId, ownerUserId, status, labelId }) {
+    async listGoals({ organizationId, ownerUserId, status, health, labelId }) {
       const rows = await sql<GoalRow[]>`
         select g.*
         from goals g
         where g.organization_id = ${organizationId}::uuid
           and (${ownerUserId}::text is null or g.owner_user_id = ${ownerUserId})
           and (${status}::goal_status is null or g.status = ${status}::goal_status)
+          and (${health}::goal_health is null or g.health = ${health}::goal_health)
           and (
             ${labelId}::uuid is null
             or exists (
@@ -112,6 +127,9 @@ export function createPostgresGoalRepository(sql: SQL): GoalRepository {
             title,
             detailed_description,
             status,
+            health,
+            timeframe_kind,
+            target_date,
             owner_user_id,
             criteria,
             created_by_user_id,
@@ -121,6 +139,9 @@ export function createPostgresGoalRepository(sql: SQL): GoalRepository {
             ${record.title},
             ${record.detailedDescription},
             ${record.status}::goal_status,
+            ${record.health}::goal_health,
+            ${record.timeframe.kind}::goal_timeframe_kind,
+            ${record.timeframe.kind === "deadline" ? record.timeframe.targetDate : null}::date,
             ${record.ownerUserId},
             ${record.criteria},
             ${record.createdByUserId},
@@ -135,8 +156,10 @@ export function createPostgresGoalRepository(sql: SQL): GoalRepository {
           goalId: row.id,
           revision: 1,
           status: record.status,
-          summary: "Goal created",
-          details: "Initial goal state.",
+          health: null,
+          evaluation: null,
+          summary: "Goal published",
+          details: "Goal published.",
           idempotencyKey: "goal-created",
           attribution
         });
@@ -169,6 +192,8 @@ export function createPostgresGoalRepository(sql: SQL): GoalRepository {
           update goals
           set title = ${update.title},
               detailed_description = ${update.detailedDescription},
+              timeframe_kind = ${update.timeframe.kind}::goal_timeframe_kind,
+              target_date = ${update.timeframe.kind === "deadline" ? update.timeframe.targetDate : null}::date,
               owner_user_id = ${update.ownerUserId},
               criteria = ${update.criteria},
               updated_by_user_id = ${update.updatedByUserId},
@@ -186,6 +211,17 @@ export function createPostgresGoalRepository(sql: SQL): GoalRepository {
         }
         return (await attachLabels(transaction, [row]))[0]!;
       });
+    },
+
+    async deleteGoal({ organizationId, goalId, actorUserId, allowAll }) {
+      const rows = await sql<{ id: string }[]>`
+        delete from goals
+        where organization_id = ${organizationId}::uuid
+          and id = ${goalId}::uuid
+          and (${allowAll} or owner_user_id = ${actorUserId})
+        returning id
+      `;
+      return rows.length > 0;
     },
 
     async listUpdates({ organizationId, goalId }) {
@@ -236,6 +272,23 @@ export function createPostgresGoalRepository(sql: SQL): GoalRepository {
         await transaction`
           update goals
           set status = ${input.status}::goal_status,
+              health = case
+                when ${input.status}::goal_status in ('completed', 'archived')
+                  then null
+                when ${input.health !== null}
+                  then ${input.health}::goal_health
+                else health
+              end,
+              current_evaluation_result = case
+                when ${input.evaluation !== null}
+                  then ${input.evaluation?.result ?? null}::goal_evaluation_result
+                else current_evaluation_result
+              end,
+              current_evaluation_as_of = case
+                when ${input.evaluation !== null}
+                  then ${input.evaluation?.asOf ?? null}::timestamptz
+                else current_evaluation_as_of
+              end,
               revision = ${revision},
               updated_by_user_id = ${input.attribution.authorityUserId},
               updated_at = now()
@@ -359,6 +412,9 @@ async function insertGoalUpdate(
       goal_id,
       revision,
       status,
+      health,
+      evaluation_result,
+      evaluation_as_of,
       summary,
       details,
       authority_user_id,
@@ -375,6 +431,9 @@ async function insertGoalUpdate(
       ${input.goalId}::uuid,
       ${input.revision},
       ${input.status}::goal_status,
+      ${input.health}::goal_health,
+      ${input.evaluation?.result ?? null}::goal_evaluation_result,
+      ${input.evaluation?.asOf ?? null}::timestamptz,
       ${input.summary},
       ${input.details},
       ${input.attribution.authorityUserId},
@@ -401,6 +460,8 @@ function matchesGoalUpdate(
   return (
     Number(row.revision) === input.expectedRevision + 1 &&
     row.status === input.status &&
+    row.health === input.health &&
+    evaluationsMatch(row, input.evaluation) &&
     row.summary === input.summary &&
     row.details === input.details &&
     row.authority_user_id === input.attribution.authorityUserId &&
@@ -466,6 +527,18 @@ function toGoalRecord(row: GoalRow, labels: GoalLabelRecord[]): GoalRecord {
     title: row.title,
     detailedDescription: row.detailed_description,
     status: row.status,
+    health: row.health,
+    timeframe:
+      row.timeframe_kind === "deadline"
+        ? { kind: "deadline", targetDate: toDateOnly(row.target_date) }
+        : { kind: row.timeframe_kind },
+    currentEvaluation:
+      row.current_evaluation_result && row.current_evaluation_as_of
+        ? {
+            result: row.current_evaluation_result,
+            asOf: toDate(row.current_evaluation_as_of)
+          }
+        : null,
     ownerUserId: row.owner_user_id,
     labels,
     criteria: toCriteria(row.criteria),
@@ -514,6 +587,14 @@ function toGoalUpdateRecord(row: GoalUpdateRow): GoalStatusUpdateRecord {
     goalId: row.goal_id,
     revision: Number(row.revision),
     status: row.status,
+    health: row.health,
+    evaluation:
+      row.evaluation_result && row.evaluation_as_of
+        ? {
+            result: row.evaluation_result,
+            asOf: toDate(row.evaluation_as_of)
+          }
+        : null,
     summary: row.summary,
     details: row.details,
     authorityUserId: row.authority_user_id,
@@ -530,6 +611,29 @@ function toGoalUpdateRecord(row: GoalUpdateRow): GoalStatusUpdateRecord {
 
 function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
+}
+
+function toDateOnly(value: Date | string | null): string {
+  if (value === null) {
+    throw new Error("Deadline goal is missing its target date");
+  }
+  return value instanceof Date
+    ? value.toISOString().slice(0, 10)
+    : value.slice(0, 10);
+}
+
+function evaluationsMatch(
+  row: GoalUpdateRow,
+  evaluation: GoalEvaluationRecord | null
+): boolean {
+  if (evaluation === null) {
+    return row.evaluation_result === null && row.evaluation_as_of === null;
+  }
+  return (
+    row.evaluation_result === evaluation.result &&
+    row.evaluation_as_of !== null &&
+    toDate(row.evaluation_as_of).getTime() === evaluation.asOf.getTime()
+  );
 }
 
 function isUniqueViolation(error: unknown): boolean {

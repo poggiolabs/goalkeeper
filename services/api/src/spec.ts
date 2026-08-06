@@ -722,6 +722,12 @@ export const apiOpenApiDocument = {
             schema: { $ref: "#/components/schemas/GoalStatus" }
           },
           {
+            name: "health",
+            in: "query",
+            required: false,
+            schema: { $ref: "#/components/schemas/GoalHealth" }
+          },
+          {
             name: "ownerUserId",
             in: "query",
             required: false,
@@ -748,9 +754,9 @@ export const apiOpenApiDocument = {
       },
       post: {
         operationId: "createGoal",
-        summary: "Create a goal",
+        summary: "Publish a goal",
         description:
-          "Creates an active goal. The owner defaults to the caller and the title defaults to a concise form of the detailed description.",
+          "Publishes a durable goal in active status. The owner defaults to the caller and the title defaults to a concise form of the detailed description.",
         tags: ["Goals"],
         security: goalSecurity,
         requestBody: {
@@ -832,6 +838,26 @@ export const apiOpenApiDocument = {
               }
             }
           },
+          ...goalErrorResponses
+        }
+      },
+      delete: {
+        operationId: "deleteGoal",
+        summary: "Delete a goal",
+        description:
+          "Permanently deletes a goal together with its label assignments and status history.",
+        tags: ["Goals"],
+        security: goalSecurity,
+        parameters: [
+          {
+            name: "goalId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" }
+          }
+        ],
+        responses: {
+          "204": { description: "The goal was deleted." },
           ...goalErrorResponses
         }
       }
@@ -1168,6 +1194,67 @@ export const apiOpenApiDocument = {
         type: "string",
         enum: ["active", "completed", "paused", "archived"]
       },
+      GoalHealth: {
+        type: "string",
+        enum: ["on_track", "at_risk", "off_track"]
+      },
+      GoalTimeframe: {
+        oneOf: [
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["kind"],
+            properties: { kind: { const: "unspecified" } }
+          },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["kind"],
+            properties: { kind: { const: "continuous" } }
+          },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["kind", "targetDate"],
+            properties: {
+              kind: { const: "deadline" },
+              targetDate: { type: "string", format: "date" }
+            }
+          }
+        ]
+      },
+      PublishedGoalTimeframe: {
+        oneOf: [
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["kind"],
+            properties: { kind: { const: "continuous" } }
+          },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["kind", "targetDate"],
+            properties: {
+              kind: { const: "deadline" },
+              targetDate: { type: "string", format: "date" }
+            }
+          }
+        ]
+      },
+      GoalEvaluationResult: {
+        type: "string",
+        enum: ["met", "not_met", "unknown"]
+      },
+      GoalEvaluation: {
+        type: "object",
+        additionalProperties: false,
+        required: ["result", "asOf"],
+        properties: {
+          result: { $ref: "#/components/schemas/GoalEvaluationResult" },
+          asOf: { type: "string", format: "date-time" }
+        }
+      },
       GoalCriterion: {
         type: "object",
         additionalProperties: false,
@@ -1220,6 +1307,9 @@ export const apiOpenApiDocument = {
           "title",
           "detailedDescription",
           "status",
+          "health",
+          "timeframe",
+          "currentEvaluation",
           "ownerUserId",
           "labels",
           "criteria",
@@ -1239,7 +1329,24 @@ export const apiOpenApiDocument = {
             description: "A long-form description that may contain Markdown."
           },
           status: { $ref: "#/components/schemas/GoalStatus" },
-          ownerUserId: { type: "string", minLength: 1, maxLength: 200 },
+          health: {
+            anyOf: [
+              { $ref: "#/components/schemas/GoalHealth" },
+              { type: "null" }
+            ]
+          },
+          timeframe: { $ref: "#/components/schemas/GoalTimeframe" },
+          currentEvaluation: {
+            anyOf: [
+              { $ref: "#/components/schemas/GoalEvaluation" },
+              { type: "null" }
+            ]
+          },
+          ownerUserId: {
+            type: ["string", "null"],
+            minLength: 1,
+            maxLength: 200
+          },
           labels: {
             type: "array",
             maxItems: 20,
@@ -1277,7 +1384,7 @@ export const apiOpenApiDocument = {
       CreateGoalRequest: {
         type: "object",
         additionalProperties: false,
-        required: ["detailedDescription"],
+        required: ["detailedDescription", "timeframe"],
         properties: {
           title: { type: "string", minLength: 1, maxLength: 200 },
           detailedDescription: {
@@ -1285,7 +1392,14 @@ export const apiOpenApiDocument = {
             minLength: 1,
             description: "A long-form description that may contain Markdown."
           },
-          ownerUserId: { type: "string", minLength: 1, maxLength: 200 },
+          timeframe: {
+            $ref: "#/components/schemas/PublishedGoalTimeframe"
+          },
+          ownerUserId: {
+            type: ["string", "null"],
+            minLength: 1,
+            maxLength: 200
+          },
           labelIds: {
             type: "array",
             maxItems: 20,
@@ -1310,7 +1424,12 @@ export const apiOpenApiDocument = {
             minLength: 1,
             description: "A long-form description that may contain Markdown."
           },
-          ownerUserId: { type: "string", minLength: 1, maxLength: 200 },
+          timeframe: { $ref: "#/components/schemas/GoalTimeframe" },
+          ownerUserId: {
+            type: ["string", "null"],
+            minLength: 1,
+            maxLength: 200
+          },
           labelIds: {
             type: "array",
             maxItems: 20,
@@ -1388,6 +1507,8 @@ export const apiOpenApiDocument = {
           "goalId",
           "revision",
           "status",
+          "health",
+          "evaluation",
           "summary",
           "details",
           "authorityUserId",
@@ -1403,6 +1524,18 @@ export const apiOpenApiDocument = {
           goalId: { type: "string", format: "uuid" },
           revision: { type: "integer", minimum: 1 },
           status: { $ref: "#/components/schemas/GoalStatus" },
+          health: {
+            anyOf: [
+              { $ref: "#/components/schemas/GoalHealth" },
+              { type: "null" }
+            ]
+          },
+          evaluation: {
+            anyOf: [
+              { $ref: "#/components/schemas/GoalEvaluation" },
+              { type: "null" }
+            ]
+          },
           summary: { type: "string", minLength: 1, maxLength: 500 },
           details: {
             type: "string",
@@ -1453,6 +1586,20 @@ export const apiOpenApiDocument = {
         ],
         properties: {
           status: { $ref: "#/components/schemas/GoalStatus" },
+          health: {
+            anyOf: [
+              { $ref: "#/components/schemas/GoalHealth" },
+              { type: "null" }
+            ],
+            description:
+              "A newly reported health value. Omit or send null to retain the current health; completed and archived statuses clear it."
+          },
+          evaluation: {
+            anyOf: [
+              { $ref: "#/components/schemas/GoalEvaluation" },
+              { type: "null" }
+            ]
+          },
           summary: { type: "string", minLength: 1, maxLength: 500 },
           details: { type: "string", minLength: 1 },
           expectedRevision: { type: "integer", minimum: 1 },

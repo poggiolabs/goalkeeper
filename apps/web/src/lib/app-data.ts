@@ -3,21 +3,25 @@ import {
   HomeIcon,
   KeyRoundIcon,
   PaletteIcon,
+  TagsIcon,
   TargetIcon,
   UserRoundIcon,
   UsersRoundIcon,
   type LucideIcon
 } from "lucide-react";
+import type { ComponentType } from "react";
+import { McpLogo } from "@/components/mcp-logo";
 
 export type NavigationRoute = {
-  href: "/home" | "/goals";
+  href: "/home" | "/goals" | "/labels";
   label: string;
   icon: LucideIcon;
 };
 
 export const navigationRoutes: NavigationRoute[] = [
   { href: "/home", label: "Home", icon: HomeIcon },
-  { href: "/goals", label: "Goals", icon: TargetIcon }
+  { href: "/goals", label: "Goals", icon: TargetIcon },
+  { href: "/labels", label: "Labels", icon: TagsIcon }
 ];
 
 export const settingsGroups = ["Personal settings", "Organization settings"] as const;
@@ -28,10 +32,11 @@ export const settingsRoutes: Array<{
     | "/settings/appearance"
     | "/settings/organization"
     | "/settings/team"
-    | "/settings/api-tokens";
+    | "/settings/api-tokens"
+    | "/settings/mcp-server";
   label: string;
   group: (typeof settingsGroups)[number];
-  icon: LucideIcon;
+  icon: ComponentType<{ className?: string }>;
 }> = [
   {
     href: "/settings/profile",
@@ -62,6 +67,12 @@ export const settingsRoutes: Array<{
     label: "API Tokens",
     group: "Organization settings",
     icon: KeyRoundIcon
+  },
+  {
+    href: "/settings/mcp-server",
+    label: "MCP Server",
+    group: "Organization settings",
+    icon: McpLogo
   }
 ];
 

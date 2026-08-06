@@ -7,8 +7,9 @@
   color-scheme: light;
   --radius: 0.75rem;
   --background: oklch(0.985 0.008 145);
+  --workspace: oklch(1 0 0);
   --foreground: oklch(0.205 0.025 145);
-  --card: oklch(1 0 0);
+  --card: oklch(0.985 0.008 145);
   --card-foreground: var(--foreground);
   --popover: oklch(1 0 0);
   --popover-foreground: var(--foreground);
@@ -37,6 +38,7 @@
 .dark {
   color-scheme: dark;
   --background: oklch(0.17 0.018 145);
+  --workspace: var(--background);
   --foreground: oklch(0.94 0.012 145);
   --card: oklch(0.205 0.02 145);
   --card-foreground: var(--foreground);
@@ -68,6 +70,7 @@
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
   --color-background: var(--background);
+  --color-workspace: var(--workspace);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -120,4 +123,40 @@
   select {
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50;
   }
+}
+
+.goal-markdown-editor {
+  --basePageBg: transparent;
+  --baseBase: var(--background);
+  --baseBgSubtle: var(--secondary);
+  --baseBg: var(--muted);
+  --baseBgHover: var(--accent);
+  --baseBgActive: var(--accent);
+  --baseLine: var(--border);
+  --baseBorder: var(--border);
+  --baseBorderHover: var(--ring);
+  --baseSolid: var(--muted-foreground);
+  --baseSolidHover: var(--foreground);
+  --baseText: var(--muted-foreground);
+  --baseTextContrast: var(--foreground);
+  --accentBase: var(--background);
+  --accentBgSubtle: var(--secondary);
+  --accentBg: var(--accent);
+  --accentBgHover: var(--accent);
+  --accentBgActive: var(--accent);
+  --accentLine: var(--ring);
+  --accentBorder: var(--ring);
+  --accentBorderHover: var(--primary);
+  --accentSolid: var(--primary);
+  --accentSolidHover: var(--primary);
+  --accentText: var(--primary);
+  --accentTextContrast: var(--primary-foreground);
+
+  background: transparent;
+  color: var(--foreground);
+  font-family: inherit;
+}
+
+.goal-markdown-editor .mdxeditor-root-contenteditable {
+  background: transparent;
 }

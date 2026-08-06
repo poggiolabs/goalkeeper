@@ -12,6 +12,8 @@ import {
   type GoalService
 } from "../../api/src/goals/service";
 import {
+  goalEvaluationResults,
+  goalHealthValues,
   goalStatuses,
   type GoalClientInfo
 } from "../../api/src/goals/types";
@@ -21,6 +23,24 @@ import { principalFromAuthInfo } from "./auth";
 const goalCriterionSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().min(1).max(10_000)
+});
+
+const publishedGoalTimeframeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("continuous") }),
+  z.object({
+    kind: z.literal("deadline"),
+    targetDate: z.iso.date()
+  })
+]);
+
+const goalTimeframeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("unspecified") }),
+  ...publishedGoalTimeframeSchema.options
+]);
+
+const goalEvaluationSchema = z.object({
+  result: z.enum(goalEvaluationResults),
+  asOf: z.iso.datetime({ offset: true })
 });
 
 export function createGoalkeeperMcpServer(input: {
@@ -43,16 +63,18 @@ export function createGoalkeeperMcpServer(input: {
       description: "List goals visible to the authenticated principal.",
       inputSchema: z.object({
         status: z.enum(goalStatuses).optional(),
+        health: z.enum(goalHealthValues).optional(),
         ownerUserId: z.string().min(1).max(200).optional(),
         labelId: z.uuid().optional()
       }),
       annotations: { readOnlyHint: true, idempotentHint: true }
     },
-    ({ status, ownerUserId, labelId }) =>
+    ({ status, health, ownerUserId, labelId }) =>
       runTool(async () => {
         const access = await resolveAccess(input, server, "goals", "read");
         const filters = new URLSearchParams();
         if (status) filters.set("status", status);
+        if (health) filters.set("health", health);
         if (ownerUserId) filters.set("ownerUserId", ownerUserId);
         if (labelId) filters.set("labelId", labelId);
         return input.goals.listGoals(access, filters);
@@ -83,8 +105,9 @@ export function createGoalkeeperMcpServer(input: {
       description: "Create an active durable goal.",
       inputSchema: z.object({
         detailedDescription: z.string().min(1),
+        timeframe: publishedGoalTimeframeSchema,
         title: z.string().min(1).max(200).optional(),
-        ownerUserId: z.string().min(1).max(200).optional(),
+        ownerUserId: z.string().min(1).max(200).nullable().optional(),
         labelIds: z.array(z.uuid()).max(20).optional(),
         criteria: z.array(goalCriterionSchema).max(100).optional()
       }),
@@ -104,13 +127,14 @@ export function createGoalkeeperMcpServer(input: {
     {
       title: "Update goal",
       description:
-        "Update goal description, criteria, ownership, or labels. Use report_goal_update to change status.",
+        "Update goal description, timeframe, criteria, ownership, or labels. Use report_goal_update to change status, report health, or record an evaluation.",
       inputSchema: z
         .object({
           goalId: z.uuid(),
           title: z.string().min(1).max(200).optional(),
           detailedDescription: z.string().min(1).optional(),
-          ownerUserId: z.string().min(1).max(200).optional(),
+          timeframe: goalTimeframeSchema.optional(),
+          ownerUserId: z.string().min(1).max(200).nullable().optional(),
           labelIds: z.array(z.uuid()).max(20).optional(),
           criteria: z.array(goalCriterionSchema).max(100).optional()
         })
@@ -153,10 +177,12 @@ export function createGoalkeeperMcpServer(input: {
     {
       title: "Report goal update",
       description:
-        "Append a status report and atomically advance the goal's status and revision.",
+        "Append a report, optionally report health or evaluate the goal, and atomically advance its status and revision.",
       inputSchema: z.object({
         goalId: z.uuid(),
         status: z.enum(goalStatuses),
+        health: z.enum(goalHealthValues).nullable().optional(),
+        evaluation: goalEvaluationSchema.nullable().optional(),
         summary: z.string().min(1).max(500),
         details: z.string().min(1),
         expectedRevision: z.number().int().positive(),

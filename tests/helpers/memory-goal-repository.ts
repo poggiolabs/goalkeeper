@@ -14,7 +14,7 @@ export class MemoryGoalRepository implements GoalRepository {
   readonly updates: GoalStatusUpdateRecord[] = [];
   private tick = 0;
 
-  async listGoals({ organizationId, ownerUserId, status, labelId }: Parameters<
+  async listGoals({ organizationId, ownerUserId, status, health, labelId }: Parameters<
     GoalRepository["listGoals"]
   >[0]): Promise<GoalRecord[]> {
     return this.goals
@@ -23,6 +23,7 @@ export class MemoryGoalRepository implements GoalRepository {
           goal.organizationId === organizationId &&
           (!ownerUserId || goal.ownerUserId === ownerUserId) &&
           (!status || goal.status === status) &&
+          (!health || goal.health === health) &&
           (!labelId || goal.labels.some((label) => label.id === labelId))
       )
       .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())
@@ -61,8 +62,10 @@ export class MemoryGoalRepository implements GoalRepository {
       goalId: goal.id,
       revision: 1,
       status: record.status,
-      summary: "Goal created",
-      details: "Initial goal state.",
+      health: null,
+      evaluation: null,
+      summary: "Goal published",
+      details: "Goal published.",
       ...copyAttribution(attribution),
       idempotencyKey: "goal-created",
       createdAt: now
@@ -90,6 +93,28 @@ export class MemoryGoalRepository implements GoalRepository {
       : goal.labels;
     Object.assign(goal, update, { labels, updatedAt: this.now() });
     return copyGoal(goal);
+  }
+
+  async deleteGoal({
+    organizationId,
+    goalId,
+    actorUserId,
+    allowAll
+  }: Parameters<GoalRepository["deleteGoal"]>[0]): Promise<boolean> {
+    const index = this.goals.findIndex(
+      (goal) =>
+        goal.organizationId === organizationId &&
+        goal.id === goalId &&
+        (allowAll || goal.ownerUserId === actorUserId)
+    );
+    if (index < 0) return false;
+    this.goals.splice(index, 1);
+    for (let updateIndex = this.updates.length - 1; updateIndex >= 0; updateIndex -= 1) {
+      if (this.updates[updateIndex]?.goalId === goalId) {
+        this.updates.splice(updateIndex, 1);
+      }
+    }
+    return true;
   }
 
   async listUpdates({
@@ -135,6 +160,13 @@ export class MemoryGoalRepository implements GoalRepository {
       goalId: input.goalId,
       revision: goal.revision + 1,
       status: input.status,
+      health: input.health,
+      evaluation: input.evaluation
+        ? {
+            result: input.evaluation.result,
+            asOf: new Date(input.evaluation.asOf)
+          }
+        : null,
       summary: input.summary,
       details: input.details,
       ...copyAttribution(input.attribution),
@@ -142,6 +174,17 @@ export class MemoryGoalRepository implements GoalRepository {
       createdAt: this.now()
     };
     goal.status = input.status;
+    if (input.status === "completed" || input.status === "archived") {
+      goal.health = null;
+    } else if (input.health) {
+      goal.health = input.health;
+    }
+    if (input.evaluation) {
+      goal.currentEvaluation = {
+        result: input.evaluation.result,
+        asOf: new Date(input.evaluation.asOf)
+      };
+    }
     goal.revision = update.revision;
     goal.updatedByUserId = input.attribution.authorityUserId;
     goal.updatedAt = update.createdAt;
@@ -264,6 +307,13 @@ export class MemoryGoalRepository implements GoalRepository {
 function copyGoal(goal: GoalRecord): GoalRecord {
   return {
     ...goal,
+    timeframe: { ...goal.timeframe },
+    currentEvaluation: goal.currentEvaluation
+      ? {
+          result: goal.currentEvaluation.result,
+          asOf: new Date(goal.currentEvaluation.asOf)
+        }
+      : null,
     labels: goal.labels.map(copyLabel),
     criteria: goal.criteria.map((criterion) => ({ ...criterion }))
   };
@@ -288,6 +338,12 @@ function copyUpdate(update: GoalStatusUpdateRecord): GoalStatusUpdateRecord {
   return {
     ...update,
     ...copyAttribution(update),
+    evaluation: update.evaluation
+      ? {
+          result: update.evaluation.result,
+          asOf: new Date(update.evaluation.asOf)
+        }
+      : null,
     createdAt: new Date(update.createdAt)
   };
 }
@@ -299,6 +355,8 @@ function matchesUpdate(
   return (
     update.revision === input.expectedRevision + 1 &&
     update.status === input.status &&
+    update.health === input.health &&
+    evaluationsMatch(update, input) &&
     update.summary === input.summary &&
     update.details === input.details &&
     update.authorityUserId === input.attribution.authorityUserId &&
@@ -310,5 +368,18 @@ function matchesUpdate(
       input.attribution.authentication.subjectId &&
     update.clientInfo?.name === input.attribution.clientInfo?.name &&
     update.clientInfo?.version === input.attribution.clientInfo?.version
+  );
+}
+
+function evaluationsMatch(
+  update: GoalStatusUpdateRecord,
+  input: Parameters<GoalRepository["appendUpdate"]>[0]
+): boolean {
+  if (update.evaluation === null || input.evaluation === null) {
+    return update.evaluation === null && input.evaluation === null;
+  }
+  return (
+    update.evaluation.result === input.evaluation.result &&
+    update.evaluation.asOf.getTime() === input.evaluation.asOf.getTime()
   );
 }

@@ -116,6 +116,7 @@ describe("goal REST contract", () => {
         },
         body: JSON.stringify({
           detailedDescription: "Launch the first durable goals API",
+          timeframe: { kind: "deadline", targetDate: "2026-09-30" },
           criteria: [
             {
               title: "Available",
@@ -205,7 +206,8 @@ describe("goal REST contract", () => {
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          detailedDescription: "Create without a browser origin"
+          detailedDescription: "Create without a browser origin",
+          timeframe: { kind: "continuous" }
         })
       })
     );
@@ -236,6 +238,7 @@ describe("goal REST contract", () => {
         goalId: goal.id,
         revision: 2,
         status: "completed",
+        health: null,
         authorityUserId: user.id,
         actor: { kind: "client", id: writeToken.token.id, runId: null },
         authentication: {
@@ -245,6 +248,22 @@ describe("goal REST contract", () => {
         clientInfo: null
       }
     });
+
+    const deleteResponse = await handleApiRequest(
+      new Request(`http://localhost/v1/goals/${goal.id}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${writeToken.secret}` }
+      })
+    );
+    expect(deleteResponse.status).toBe(204);
+    expect(await deleteResponse.text()).toBe("");
+
+    const deletedGoalResponse = await handleApiRequest(
+      new Request(`http://localhost/v1/goals/${goal.id}`, {
+        headers: { authorization: `Bearer ${readToken.secret}` }
+      })
+    );
+    expect(deletedGoalResponse.status).toBe(404);
   });
 
   test("fails closed for invalid bearer credentials and browser CSRF", async () => {
@@ -276,6 +295,7 @@ describe("goal REST contract", () => {
     expect(apiOpenApiDocument.paths[apiRoutes.goalsCreate.path].post).toBeDefined();
     expect(apiOpenApiDocument.paths[apiRoutes.goalGet.path].get).toBeDefined();
     expect(apiOpenApiDocument.paths[apiRoutes.goalUpdate.path].patch).toBeDefined();
+    expect(apiOpenApiDocument.paths[apiRoutes.goalDelete.path].delete).toBeDefined();
     expect(
       apiOpenApiDocument.paths[apiRoutes.goalUpdatesList.path].get
     ).toBeDefined();

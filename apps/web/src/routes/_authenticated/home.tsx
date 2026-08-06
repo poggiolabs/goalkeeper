@@ -28,11 +28,23 @@ function HomePage() {
           <CardTitle>Your organization is ready</CardTitle>
         </CardHeader>
         <CardContent>
-          <Button asChild variant="outline">
-            <Link to="/goals">
-              Open goals <ArrowRightIcon />
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link to="/goals">
+                Open goals <ArrowRightIcon />
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/settings/mcp-server">
+                Connect your agents <ArrowRightIcon />
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/settings/team">
+                Invite your team <ArrowRightIcon />
+              </Link>
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

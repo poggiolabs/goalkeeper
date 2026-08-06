@@ -26,7 +26,8 @@ LABEL org.opencontainers.image.title="Goalkeeper Web" \
       org.opencontainers.image.revision="${REVISION}"
 
 ENV GOALKEEPER_API_URL= \
-    GOALKEEPER_DOCS_URL=
+    GOALKEEPER_DOCS_URL= \
+    GOALKEEPER_MCP_URL=
 
 COPY --from=build --chown=101:101 /app/apps/web/dist /usr/share/nginx/html
 COPY containers/web/default.conf.template /etc/nginx/templates/default.conf.template

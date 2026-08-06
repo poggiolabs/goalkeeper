@@ -112,6 +112,7 @@ describe("Goalkeeper MCP server", () => {
         name: "create_goal",
         arguments: {
           detailedDescription: "Manage goals through a modern MCP server",
+          timeframe: { kind: "continuous" },
           criteria: [
             {
               title: "MCP access",
@@ -130,7 +131,8 @@ describe("Goalkeeper MCP server", () => {
         name: "report_goal_update",
         arguments: {
           goalId: goal.id,
-          status: "completed",
+          status: "active",
+          health: "on_track",
           summary: "MCP contract complete",
           details: "The goal is readable and mutable through MCP.",
           expectedRevision: 1,
@@ -141,7 +143,8 @@ describe("Goalkeeper MCP server", () => {
         update: {
           goalId: goal.id,
           revision: 2,
-          status: "completed",
+          status: "active",
+          health: "on_track",
           authorityUserId: harness.user.id,
           actor: { kind: "client", id: token.token.id, runId: null },
           authentication: { kind: "api_token", subjectId: token.token.id },
@@ -172,7 +175,8 @@ describe("Goalkeeper MCP server", () => {
               }
             ],
             labels: [{ id: label.id, name: "MCP" }],
-            status: "completed",
+            status: "active",
+            health: "on_track",
             revision: 2
           }
         ]
@@ -420,7 +424,10 @@ describe("Goalkeeper MCP server", () => {
       expect(result.structuredContent).toEqual({ goals: [] });
       const createResult = await client.callTool({
         name: "create_goal",
-        arguments: { detailedDescription: "Verify OAuth agent attribution" }
+        arguments: {
+          detailedDescription: "Verify OAuth agent attribution",
+          timeframe: { kind: "continuous" }
+        }
       });
       const goal = (createResult.structuredContent as {
         goal: { id: string };

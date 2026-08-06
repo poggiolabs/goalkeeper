@@ -706,6 +706,179 @@ export async function migrateApiDatabase(sql: SQL): Promise<void> {
         values ('010_label_scopes')
       `;
     }
+
+    const goalDraftsApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '011_goal_drafts'
+    `;
+    if (goalDraftsApplied.length === 0) {
+      // This migration ID was briefly released with a persisted draft status.
+      // New databases retain the ledger entry without introducing that status;
+      // migration 013 removes it from databases that already received it.
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('011_goal_drafts')
+      `;
+    }
+
+    const goalDeleteCascadeApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '012_goal_delete_cascade'
+    `;
+    if (goalDeleteCascadeApplied.length === 0) {
+      await transaction`
+        alter table goal_updates
+          drop constraint goal_updates_goal_fk,
+          add constraint goal_updates_goal_fk
+            foreign key (organization_id, goal_id)
+            references goals (organization_id, id)
+            on delete cascade
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('012_goal_delete_cascade')
+      `;
+    }
+
+    const goalDraftStatusRemoved = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '013_remove_goal_draft_status'
+    `;
+    if (goalDraftStatusRemoved.length === 0) {
+      const [draftStatus] = await transaction<{ present: boolean }[]>`
+        select exists (
+          select 1
+          from pg_enum
+          join pg_type on pg_type.oid = pg_enum.enumtypid
+          where pg_type.typname = 'goal_status'
+            and pg_type.typnamespace = current_schema()::regnamespace
+            and pg_enum.enumlabel = 'draft'
+        ) as present
+      `;
+      if (draftStatus?.present) {
+        await transaction`
+          update goals
+          set status = 'archived'::goal_status
+          where status = 'draft'::goal_status
+        `;
+        await transaction`
+          update goal_updates
+          set status = 'archived'::goal_status
+          where status = 'draft'::goal_status
+        `;
+        await transaction`
+          alter type goal_status rename to goal_status_with_draft
+        `;
+        await transaction`
+          create type goal_status as enum (
+            'active',
+            'completed',
+            'paused',
+            'archived'
+          )
+        `;
+        await transaction`
+          alter table goals
+            alter column status drop default,
+            alter column status type goal_status
+              using status::text::goal_status,
+            alter column status set default 'active'::goal_status
+        `;
+        await transaction`
+          alter table goal_updates
+            alter column status type goal_status
+              using status::text::goal_status
+        `;
+        await transaction`
+          drop type goal_status_with_draft
+        `;
+      }
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('013_remove_goal_draft_status')
+      `;
+    }
+
+    const optionalGoalOwnerApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '014_optional_goal_owner'
+    `;
+    if (optionalGoalOwnerApplied.length === 0) {
+      await transaction`
+        alter table goals alter column owner_user_id drop not null
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('014_optional_goal_owner')
+      `;
+    }
+
+    const goalTimeframesApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '015_goal_timeframes'
+    `;
+    if (goalTimeframesApplied.length === 0) {
+      await transaction`
+        create type goal_timeframe_kind as enum (
+          'unspecified',
+          'deadline',
+          'continuous'
+        )
+      `;
+      await transaction`
+        create type goal_evaluation_result as enum (
+          'met',
+          'not_met',
+          'unknown'
+        )
+      `;
+      await transaction`
+        alter table goals
+          add column timeframe_kind goal_timeframe_kind not null
+            default 'unspecified'::goal_timeframe_kind,
+          add column target_date date,
+          add column current_evaluation_result goal_evaluation_result,
+          add column current_evaluation_as_of timestamptz,
+          add constraint goals_timeframe_check check (
+            (timeframe_kind = 'deadline' and target_date is not null)
+            or (timeframe_kind <> 'deadline' and target_date is null)
+          ),
+          add constraint goals_current_evaluation_check check (
+            (current_evaluation_result is null) =
+            (current_evaluation_as_of is null)
+          )
+      `;
+      await transaction`
+        alter table goal_updates
+          add column evaluation_result goal_evaluation_result,
+          add column evaluation_as_of timestamptz,
+          add constraint goal_updates_evaluation_check check (
+            (evaluation_result is null) = (evaluation_as_of is null)
+          )
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('015_goal_timeframes')
+      `;
+    }
+
+    const goalHealthApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '016_goal_health'
+    `;
+    if (goalHealthApplied.length === 0) {
+      await transaction`
+        create type goal_health as enum (
+          'on_track',
+          'at_risk',
+          'off_track'
+        )
+      `;
+      await transaction`
+        alter table goals add column health goal_health
+      `;
+      await transaction`
+        alter table goal_updates add column health goal_health
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('016_goal_health')
+      `;
+    }
   });
 }
 
