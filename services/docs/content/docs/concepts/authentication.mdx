@@ -62,6 +62,37 @@ algorithm, key ID, issuer, audience, and expiry before constructing an
 `AuthSession`. JWT key rotation and issuer-specific claims stay inside the
 provider.
 
+## Managed trusted-proxy provider
+
+The standalone API includes a vendor-neutral redirect provider for managed
+deployments. Select it with `AUTH_PROVIDER=trusted_proxy` and configure:
+
+```dotenv
+AUTH_PROXY_SECRET=<at-least-32-byte-shared-secret>
+AUTH_PROXY_ISSUER=managed-deployment-identifier
+AUTH_PROXY_AUDIENCE=goalkeeper-environment-identifier
+AUTH_PROXY_LOGIN_URL=https://example.com/_auth/login
+AUTH_PROXY_LOGOUT_URL=https://example.com/_auth/logout
+```
+
+The proxy authenticates the provider session and injects two private-hop
+headers: a base64url JSON assertion in `x-goalkeeper-auth-assertion` and its
+HMAC-SHA-256 signature in `x-goalkeeper-auth-signature`. The assertion version
+is `1` and contains `iss`, `aud`, Unix `iat`, the exact uppercase request
+`method`, exact path plus query in `path`, `sessionId`, and the canonical
+`user` fields.
+
+The backend accepts assertions for at most 30 seconds, permits no more than
+five seconds of future clock skew, verifies the signature before returning a
+session, and binds the assertion to the exact request method and path. The
+proxy must strip both headers from every client request before signing its own
+values. The API must not be directly reachable around that proxy, and the
+shared secret must be unique to the deployment.
+
+Provider SDKs, access tokens, refresh tokens, and cookies remain in the managed
+proxy. Goalkeeper persists only its own organization and product data keyed by
+the canonical provider-qualified user ID.
+
 ## Built-in email provider
 
 The default self-hosted configuration uses the built-in email provider.
