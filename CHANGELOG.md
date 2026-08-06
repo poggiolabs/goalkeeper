@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/poggiolabs/goalkeeper/compare/v0.2.0...v0.3.0) (2026-08-06)
+
+
+### Features
+
+* **auth:** add trusted proxy backend ([#17](https://github.com/poggiolabs/goalkeeper/issues/17)) ([665636f](https://github.com/poggiolabs/goalkeeper/commit/665636f3a55fd4f406b996d6fe6aea7e9dc8d3f7))
+
 ## [0.2.0](https://github.com/poggiolabs/goalkeeper/compare/v0.1.1...v0.2.0) (2026-08-06)
 
 
