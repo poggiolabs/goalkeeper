@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/poggiolabs/goalkeeper/compare/v0.1.1...v0.2.0) (2026-08-06)
+
+
+### Features
+
+* **auth:** add label API token scopes ([#13](https://github.com/poggiolabs/goalkeeper/issues/13)) ([ad43a35](https://github.com/poggiolabs/goalkeeper/commit/ad43a35383faa4c6e86c015e08c5bde04ef6afed))
+* **goals:** goal management ui, mcp settings ([#15](https://github.com/poggiolabs/goalkeeper/issues/15)) ([f0ffe6d](https://github.com/poggiolabs/goalkeeper/commit/f0ffe6d1be8a4209ab5b6918cd06d58839a203d5))
+
+
+### Bug Fixes
+
+* **ui:** dark on dark text in composer ([#16](https://github.com/poggiolabs/goalkeeper/issues/16)) ([3827361](https://github.com/poggiolabs/goalkeeper/commit/382736154d2a90055289608ccbc49d3de1096cee))
+
 ## [0.1.1](https://github.com/poggiolabs/goalkeeper/compare/v0.1.0...v0.1.1) (2026-08-05)
 
 
