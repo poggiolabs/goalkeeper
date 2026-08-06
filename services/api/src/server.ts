@@ -7,6 +7,8 @@ import {
 import { createApiTokenService } from "./api-tokens/service";
 import { configuredEmailDelivery } from "./auth/email-delivery";
 import { createPostgresEmailAuthBackend } from "./auth/email";
+import { createTrustedProxyAuthBackend } from "./auth/trusted-proxy";
+import type { AuthBackend } from "./auth/types";
 import { createPostgresOrganizationRepository } from "./organizations/postgres";
 import { createOrganizationService } from "./organizations/service";
 import { createPostgresGoalRepository } from "./goals/postgres";
@@ -31,17 +33,27 @@ const goals = createGoalService(createPostgresGoalRepository(database), {
   isOrganizationMember: async (userId, organizationId) =>
     (await organizations.roleForUser(userId, organizationId)) !== null
 });
-if (authProvider !== "email") {
-  throw new Error(
-    "The standalone API supports AUTH_PROVIDER=email. Inject another AuthBackend into createApiHandler()."
-  );
-}
-const auth = createPostgresEmailAuthBackend({
-  sql: database,
-  webOrigin,
-  apiOrigin,
-  emailDelivery: configuredEmailDelivery()
-});
+const auth: AuthBackend = (() => {
+  switch (authProvider) {
+    case "email":
+      return createPostgresEmailAuthBackend({
+        sql: database,
+        webOrigin,
+        apiOrigin,
+        emailDelivery: configuredEmailDelivery()
+      });
+    case "trusted_proxy":
+      return createTrustedProxyAuthBackend({
+        secret: requiredEnvironment("AUTH_PROXY_SECRET"),
+        issuer: requiredEnvironment("AUTH_PROXY_ISSUER"),
+        audience: requiredEnvironment("AUTH_PROXY_AUDIENCE"),
+        loginUrl: requiredEnvironment("AUTH_PROXY_LOGIN_URL"),
+        logoutUrl: requiredEnvironment("AUTH_PROXY_LOGOUT_URL")
+      });
+    default:
+      throw new Error("AUTH_PROVIDER must be one of: email, trusted_proxy");
+  }
+})();
 
 export const handleApiRequest = createApiHandler({
   webOrigin,
@@ -61,4 +73,10 @@ if (import.meta.main) {
   });
 
   console.log(`REST API listening on http://${server.hostname}:${server.port}`);
+}
+
+function requiredEnvironment(name: string) {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required`);
+  return value;
 }

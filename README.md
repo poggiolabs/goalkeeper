@@ -85,6 +85,12 @@ Self-hosted operators can replace the built-in implementation by supplying an
 `email` fields. Provider-specific claims and SDK types remain behind that
 interface.
 
+Managed deployments can select `AUTH_PROVIDER=trusted_proxy`. The bundled
+trusted-proxy backend accepts only fresh HMAC-signed identity assertions bound
+to the exact request method and path, issuer, and audience. The authenticating
+proxy remains responsible for its provider session and must be the API's sole
+public ingress.
+
 The authenticated app opens at `/home`. API tokens are managed at
 `/settings/api-tokens`, while logout is available from the account menu in the
 sidebar. The first authenticated session creates
