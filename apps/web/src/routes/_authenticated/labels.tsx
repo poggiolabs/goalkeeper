@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useAuth } from "@/auth";
-import { LabelsPane } from "@/routes/_authenticated/goals";
+import { LabelsPane } from "@/components/labels-pane";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiUrl } from "@/lib/config";
