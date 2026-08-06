@@ -118,8 +118,8 @@ function ShellContent() {
         <SidebarRail />
       </Sidebar>
 
-      <SidebarInset>
-        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/90 px-4 backdrop-blur md:px-6">
+      <SidebarInset className="bg-workspace">
+        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-workspace/90 px-4 backdrop-blur md:px-6">
           <SidebarTrigger />
           <div className="h-4 w-px bg-border" />
           <span className="text-sm font-medium">
@@ -150,7 +150,10 @@ function MainNavigation() {
               <SidebarMenuItem key={route.href}>
                 <SidebarMenuButton
                   asChild
-                  isActive={location.pathname === route.href}
+                  isActive={
+                    location.pathname === route.href ||
+                    location.pathname.startsWith(`${route.href}/`)
+                  }
                   tooltip={route.label}
                 >
                   <Link to={route.href} onClick={() => setOpenMobile(false)}>
@@ -378,12 +381,14 @@ function AccountMenu({ onError }: { onError: (error: string | null) => void }) {
 }
 
 function pageLabel(pathname: string): string {
-  if (pathname === "/goals") return "Goals";
+  if (pathname === "/goals" || pathname.startsWith("/goals/")) return "Goals";
+  if (pathname === "/labels") return "Labels";
   if (pathname === "/settings/profile") return "Profile";
   if (pathname === "/settings/appearance") return "Appearance";
   if (pathname === "/settings/organization") return "Organization";
   if (pathname === "/settings/team") return "Team";
   if (pathname === "/settings/api-tokens") return "API Tokens";
+  if (pathname === "/settings/mcp-server") return "MCP Server";
   if (pathname === "/organizations/new") return "New organization";
   return "Home";
 }

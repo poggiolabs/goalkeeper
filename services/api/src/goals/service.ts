@@ -4,14 +4,22 @@ import type {
   GoalAuthentication,
   GoalClientInfo,
   GoalCriterion,
+  GoalEvaluation,
+  GoalHealth,
   GoalLabel,
   GoalLabelRecord,
   GoalRecord,
   GoalRepository,
   GoalStatusUpdateRecord,
-  GoalStatus
+  GoalStatus,
+  GoalTimeframe
 } from "./types";
-import { GoalRepositoryError, goalStatuses } from "./types";
+import {
+  GoalRepositoryError,
+  goalEvaluationResults,
+  goalHealthValues,
+  goalStatuses
+} from "./types";
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -57,6 +65,7 @@ export function createGoalService(
         organizationId: access.organizationId,
         ownerUserId: access.readAll ? filters.ownerUserId : access.userId,
         status: filters.status,
+        health: filters.health,
         labelId: filters.labelId
       });
       return { goals: records.map(toGoal) };
@@ -82,14 +91,19 @@ export function createGoalService(
           403
         );
       }
-      await requireMember(options, input.ownerUserId, access.organizationId);
+      if (input.ownerUserId) {
+        await requireMember(options, input.ownerUserId, access.organizationId);
+      }
       const record = await goalRepositoryOperation(() =>
         repository.insertGoal(
           {
             organizationId: access.organizationId,
             title: input.title ?? generateGoalTitle(input.detailedDescription),
             detailedDescription: input.detailedDescription,
-            status: "active",
+            status: input.status,
+            health: null,
+            timeframe: input.timeframe,
+            currentEvaluation: null,
             ownerUserId: input.ownerUserId,
             criteria: input.criteria,
             revision: 1,
@@ -116,7 +130,10 @@ export function createGoalService(
       if (!existing || (!access.writeAll && existing.ownerUserId !== access.userId)) {
         throw notFound("goal");
       }
-      const ownerUserId = input.ownerUserId ?? existing.ownerUserId;
+      const ownerUserId =
+        input.ownerUserId === undefined
+          ? existing.ownerUserId
+          : input.ownerUserId;
       if (ownerUserId !== existing.ownerUserId && !access.writeAll) {
         throw new GoalError(
           "goal_owner_forbidden",
@@ -124,7 +141,7 @@ export function createGoalService(
           403
         );
       }
-      if (input.ownerUserId) {
+      if (input.ownerUserId !== undefined && ownerUserId) {
         await requireMember(options, ownerUserId, access.organizationId);
       }
       const record = await goalRepositoryOperation(() =>
@@ -137,6 +154,7 @@ export function createGoalService(
             title: input.title ?? existing.title,
             detailedDescription:
               input.detailedDescription ?? existing.detailedDescription,
+            timeframe: input.timeframe ?? existing.timeframe,
             ownerUserId,
             criteria: input.criteria ?? existing.criteria,
             updatedByUserId: access.userId
@@ -146,6 +164,16 @@ export function createGoalService(
       );
       if (!record) throw notFound("goal");
       return { goal: toGoal(record) };
+    },
+
+    async deleteGoal(access: GoalAccess, goalId: string): Promise<void> {
+      const deleted = await repository.deleteGoal({
+        organizationId: access.organizationId,
+        goalId: normalizeId(goalId, "goal"),
+        actorUserId: access.userId,
+        allowAll: access.writeAll
+      });
+      if (!deleted) throw notFound("goal");
     },
 
     async listUpdates(access: GoalAccess, goalId: string) {
@@ -183,6 +211,14 @@ export function createGoalService(
           allowAll: access.writeAll,
           expectedRevision: input.expectedRevision,
           status: input.status,
+          health: input.health,
+          evaluation:
+            input.evaluation === null
+              ? null
+              : {
+                  result: input.evaluation.result,
+                  asOf: new Date(input.evaluation.asOf)
+                },
           summary: input.summary,
           details: input.details,
           idempotencyKey: input.idempotencyKey,
@@ -301,6 +337,7 @@ function normalizeGoalCreate(request: unknown, defaultOwnerUserId: string) {
   const candidate = objectWithKeys(request, [
     "title",
     "detailedDescription",
+    "timeframe",
     "ownerUserId",
     "labelIds",
     "criteria"
@@ -314,10 +351,12 @@ function normalizeGoalCreate(request: unknown, defaultOwnerUserId: string) {
       candidate.detailedDescription,
       "goal detailed description"
     ),
+    status: "active" as const,
+    timeframe: goalTimeframe(candidate.timeframe, false),
     ownerUserId:
       candidate.ownerUserId === undefined
         ? defaultOwnerUserId
-        : requiredString(candidate.ownerUserId, "goal owner", 200),
+        : optionalOwnerUserId(candidate.ownerUserId),
     labelIds: labelIds(candidate.labelIds),
     criteria: goalCriteria(candidate.criteria)
   };
@@ -327,6 +366,7 @@ function normalizeGoalUpdate(request: unknown) {
   const candidate = objectWithKeys(request, [
     "title",
     "detailedDescription",
+    "timeframe",
     "ownerUserId",
     "labelIds",
     "criteria"
@@ -346,10 +386,14 @@ function normalizeGoalUpdate(request: unknown) {
             candidate.detailedDescription,
             "goal detailed description"
           ),
+    timeframe:
+      candidate.timeframe === undefined
+        ? undefined
+        : goalTimeframe(candidate.timeframe, true),
     ownerUserId:
       candidate.ownerUserId === undefined
         ? undefined
-        : requiredString(candidate.ownerUserId, "goal owner", 200),
+        : optionalOwnerUserId(candidate.ownerUserId),
     labelIds:
       candidate.labelIds === undefined ? null : labelIds(candidate.labelIds),
     criteria:
@@ -362,13 +406,31 @@ function normalizeGoalUpdate(request: unknown) {
 function normalizeGoalStatusUpdate(request: unknown) {
   const candidate = objectWithKeys(request, [
     "status",
+    "health",
+    "evaluation",
     "summary",
     "details",
     "expectedRevision",
     "idempotencyKey"
   ]);
+  const status = goalStatus(candidate.status);
+  const health =
+    candidate.health === undefined || candidate.health === null
+      ? null
+      : goalHealth(candidate.health);
+  if (health !== null && (status === "completed" || status === "archived")) {
+    throw new GoalError(
+      "invalid_goal_health",
+      "Completed and archived goals cannot report health"
+    );
+  }
   return {
-    status: goalStatus(candidate.status),
+    status,
+    health,
+    evaluation:
+      candidate.evaluation === undefined || candidate.evaluation === null
+        ? null
+        : goalEvaluation(candidate.evaluation),
     summary: requiredString(candidate.summary, "update summary", 500),
     details: requiredLongText(candidate.details, "update details"),
     expectedRevision: positiveInteger(
@@ -426,14 +488,17 @@ function normalizeLabelUpdate(request: unknown) {
 
 function normalizeGoalFilters(searchParams: URLSearchParams): {
   status: GoalStatus | null;
+  health: GoalHealth | null;
   ownerUserId: string | null;
   labelId: string | null;
 } {
   const status = searchParams.get("status");
+  const health = searchParams.get("health");
   const ownerUserId = searchParams.get("ownerUserId");
   const labelId = searchParams.get("labelId");
   return {
     status: status === null ? null : goalStatus(status),
+    health: health === null ? null : goalHealth(health),
     ownerUserId:
       ownerUserId === null
         ? null
@@ -482,6 +547,11 @@ function optionalNullableString(
 ): string | null {
   if (value === undefined || value === null) return null;
   return requiredString(value, field, maximumLength);
+}
+
+function optionalOwnerUserId(value: unknown): string | null {
+  if (value === null) return null;
+  return requiredString(value, "goal owner", 200);
 }
 
 function requiredLongText(value: unknown, field: string): string {
@@ -574,6 +644,132 @@ function goalStatus(value: unknown): GoalStatus {
   return value as GoalStatus;
 }
 
+function goalHealth(value: unknown): GoalHealth {
+  if (
+    typeof value !== "string" ||
+    !(goalHealthValues as readonly string[]).includes(value)
+  ) {
+    throw new GoalError(
+      "invalid_goal_health",
+      `Goal health must be one of: ${goalHealthValues.join(", ")}`
+    );
+  }
+  return value as GoalHealth;
+}
+
+function goalTimeframe(
+  value: unknown,
+  allowUnspecified: boolean
+): GoalTimeframe {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new GoalError(
+      "invalid_goal_timeframe",
+      "Goal timeframe must be an object"
+    );
+  }
+  const candidate = value as Record<string, unknown>;
+  const unknown = Object.keys(candidate).find(
+    (key) => key !== "kind" && key !== "targetDate"
+  );
+  if (unknown) {
+    throw new GoalError(
+      "invalid_goal_timeframe",
+      `Unsupported timeframe field: ${unknown}`
+    );
+  }
+  if (candidate.kind === "continuous") {
+    if (candidate.targetDate !== undefined) {
+      throw invalidTimeframe("Continuous goals cannot have a target date");
+    }
+    return { kind: "continuous" };
+  }
+  if (candidate.kind === "deadline") {
+    return {
+      kind: "deadline",
+      targetDate: dateOnly(candidate.targetDate, "goal target date")
+    };
+  }
+  if (candidate.kind === "unspecified" && allowUnspecified) {
+    if (candidate.targetDate !== undefined) {
+      throw invalidTimeframe("Unspecified goals cannot have a target date");
+    }
+    return { kind: "unspecified" };
+  }
+  throw invalidTimeframe(
+    allowUnspecified
+      ? "Goal timeframe must be unspecified, deadline, or continuous"
+      : "Goal timeframe must be deadline or continuous"
+  );
+}
+
+function goalEvaluation(value: unknown): GoalEvaluation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new GoalError(
+      "invalid_goal_evaluation",
+      "Goal evaluation must be an object"
+    );
+  }
+  const candidate = value as Record<string, unknown>;
+  const unknown = Object.keys(candidate).find(
+    (key) => key !== "result" && key !== "asOf"
+  );
+  if (unknown) {
+    throw new GoalError(
+      "invalid_goal_evaluation",
+      `Unsupported evaluation field: ${unknown}`
+    );
+  }
+  if (
+    typeof candidate.result !== "string" ||
+    !(goalEvaluationResults as readonly string[]).includes(candidate.result)
+  ) {
+    throw new GoalError(
+      "invalid_goal_evaluation",
+      `Evaluation result must be one of: ${goalEvaluationResults.join(", ")}`
+    );
+  }
+  if (
+    typeof candidate.asOf !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+      candidate.asOf
+    )
+  ) {
+    throw new GoalError(
+      "invalid_goal_evaluation",
+      "Evaluation asOf must be an ISO 8601 timestamp"
+    );
+  }
+  const asOf = new Date(candidate.asOf);
+  if (Number.isNaN(asOf.getTime())) {
+    throw new GoalError(
+      "invalid_goal_evaluation",
+      "Evaluation asOf must be an ISO 8601 timestamp"
+    );
+  }
+  return {
+    result: candidate.result as GoalEvaluation["result"],
+    asOf: asOf.toISOString()
+  };
+}
+
+function dateOnly(value: unknown, field: string): string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw invalidTimeframe(`${field} must use YYYY-MM-DD`);
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== value
+  ) {
+    throw invalidTimeframe(`${field} must be a valid date`);
+  }
+  return value;
+}
+
+function invalidTimeframe(message: string): GoalError {
+  return new GoalError("invalid_goal_timeframe", message);
+}
+
 function normalizeId(value: unknown, resource: "goal" | "label"): string {
   if (typeof value !== "string" || !uuidPattern.test(value)) {
     throw notFound(resource);
@@ -647,6 +843,13 @@ function generateGoalTitle(detailedDescription: string): string {
 function toGoal(record: GoalRecord): Goal {
   return {
     ...record,
+    timeframe: { ...record.timeframe },
+    currentEvaluation: record.currentEvaluation
+      ? {
+          result: record.currentEvaluation.result,
+          asOf: record.currentEvaluation.asOf.toISOString()
+        }
+      : null,
     labels: record.labels.map(toLabel),
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString()
@@ -664,6 +867,12 @@ function toLabel(record: GoalLabelRecord): GoalLabel {
 function toGoalUpdate(record: GoalStatusUpdateRecord) {
   return {
     ...record,
+    evaluation: record.evaluation
+      ? {
+          result: record.evaluation.result,
+          asOf: record.evaluation.asOf.toISOString()
+        }
+      : null,
     createdAt: record.createdAt.toISOString()
   };
 }

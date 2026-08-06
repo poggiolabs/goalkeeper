@@ -533,7 +533,11 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
     }
 
-    const goalMatch = matchResourceRoute(request, "/v1/goals/", ["GET", "PATCH"]);
+    const goalMatch = matchResourceRoute(request, "/v1/goals/", [
+      "GET",
+      "PATCH",
+      "DELETE"
+    ]);
     if (goalMatch) {
       const operation = request.method === "GET" ? "read" : "write";
       try {
@@ -571,7 +575,8 @@ export function createApiHandler(dependencies: ApiDependencies) {
             webOrigin
           );
         }
-        return json({ error: "method_not_allowed" }, 405, webOrigin);
+        await dependencies.goals.deleteGoal(resolved.access, goalMatch);
+        return sensitiveEmpty(204, webOrigin);
       } catch (error) {
         return goalRouteErrorResponse(error, webOrigin);
       }

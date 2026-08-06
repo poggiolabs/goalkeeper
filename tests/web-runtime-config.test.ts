@@ -24,7 +24,8 @@ describe("web runtime configuration", () => {
   test("supplies local service URLs through the Vite development environment", async () => {
     expect(await Bun.file(".env.development").text()).toBe(
       "VITE_API_URL=http://localhost:3001\n" +
-        "VITE_DOCS_URL=http://localhost:3003/docs\n"
+        "VITE_DOCS_URL=http://localhost:3003/docs\n" +
+        "VITE_MCP_URL=http://127.0.0.1:3002/mcp\n"
     );
   });
 

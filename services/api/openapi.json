@@ -928,6 +928,14 @@
             }
           },
           {
+            "name": "health",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/GoalHealth"
+            }
+          },
+          {
             "name": "ownerUserId",
             "in": "query",
             "required": false,
@@ -1012,8 +1020,8 @@
       },
       "post": {
         "operationId": "createGoal",
-        "summary": "Create a goal",
-        "description": "Creates an active goal. The owner defaults to the caller and the title defaults to a concise form of the detailed description.",
+        "summary": "Publish a goal",
+        "description": "Publishes a durable goal in active status. The owner defaults to the caller and the title defaults to a concise form of the detailed description.",
         "tags": [
           "Goals"
         ],
@@ -1234,6 +1242,88 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "The request is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The request is not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The credential lacks the required scope or authority.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource was not found or is not visible to the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The requested state conflicts with an existing resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteGoal",
+        "summary": "Delete a goal",
+        "description": "Permanently deletes a goal together with its label assignments and status history.",
+        "tags": [
+          "Goals"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "goalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The goal was deleted."
           },
           "400": {
             "description": "The request is invalid.",
@@ -2201,6 +2291,117 @@
           "archived"
         ]
       },
+      "GoalHealth": {
+        "type": "string",
+        "enum": [
+          "on_track",
+          "at_risk",
+          "off_track"
+        ]
+      },
+      "GoalTimeframe": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "unspecified"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "continuous"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "targetDate"
+            ],
+            "properties": {
+              "kind": {
+                "const": "deadline"
+              },
+              "targetDate": {
+                "type": "string",
+                "format": "date"
+              }
+            }
+          }
+        ]
+      },
+      "PublishedGoalTimeframe": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "continuous"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "targetDate"
+            ],
+            "properties": {
+              "kind": {
+                "const": "deadline"
+              },
+              "targetDate": {
+                "type": "string",
+                "format": "date"
+              }
+            }
+          }
+        ]
+      },
+      "GoalEvaluationResult": {
+        "type": "string",
+        "enum": [
+          "met",
+          "not_met",
+          "unknown"
+        ]
+      },
+      "GoalEvaluation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "result",
+          "asOf"
+        ],
+        "properties": {
+          "result": {
+            "$ref": "#/components/schemas/GoalEvaluationResult"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "GoalCriterion": {
         "type": "object",
         "additionalProperties": false,
@@ -2292,6 +2493,9 @@
           "title",
           "detailedDescription",
           "status",
+          "health",
+          "timeframe",
+          "currentEvaluation",
           "ownerUserId",
           "labels",
           "criteria",
@@ -2323,8 +2527,34 @@
           "status": {
             "$ref": "#/components/schemas/GoalStatus"
           },
+          "health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeframe": {
+            "$ref": "#/components/schemas/GoalTimeframe"
+          },
+          "currentEvaluation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalEvaluation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "ownerUserId": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "minLength": 1,
             "maxLength": 200
           },
@@ -2395,7 +2625,8 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "detailedDescription"
+          "detailedDescription",
+          "timeframe"
         ],
         "properties": {
           "title": {
@@ -2408,8 +2639,14 @@
             "minLength": 1,
             "description": "A long-form description that may contain Markdown."
           },
+          "timeframe": {
+            "$ref": "#/components/schemas/PublishedGoalTimeframe"
+          },
           "ownerUserId": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "minLength": 1,
             "maxLength": 200
           },
@@ -2446,8 +2683,14 @@
             "minLength": 1,
             "description": "A long-form description that may contain Markdown."
           },
+          "timeframe": {
+            "$ref": "#/components/schemas/GoalTimeframe"
+          },
           "ownerUserId": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "minLength": 1,
             "maxLength": 200
           },
@@ -2599,6 +2842,8 @@
           "goalId",
           "revision",
           "status",
+          "health",
+          "evaluation",
           "summary",
           "details",
           "authorityUserId",
@@ -2627,6 +2872,26 @@
           },
           "status": {
             "$ref": "#/components/schemas/GoalStatus"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evaluation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalEvaluation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "summary": {
             "type": "string",
@@ -2709,6 +2974,27 @@
         "properties": {
           "status": {
             "$ref": "#/components/schemas/GoalStatus"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalHealth"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A newly reported health value. Omit or send null to retain the current health; completed and archived statuses clear it."
+          },
+          "evaluation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalEvaluation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "summary": {
             "type": "string",

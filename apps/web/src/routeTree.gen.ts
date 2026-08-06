@@ -16,9 +16,12 @@ import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticated/account'
 import { Route as AuthenticatedGoalsRouteImport } from './routes/_authenticated/goals'
 import { Route as AuthenticatedHomeRouteImport } from './routes/_authenticated/home'
+import { Route as AuthenticatedLabelsRouteImport } from './routes/_authenticated/labels'
+import { Route as AuthenticatedGoalsGoalIdRouteImport } from './routes/_authenticated/goals.$goalId'
 import { Route as AuthenticatedOrganizationsNewRouteImport } from './routes/_authenticated/organizations/new'
 import { Route as AuthenticatedSettingsApiTokensRouteImport } from './routes/_authenticated/settings/api-tokens'
 import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
+import { Route as AuthenticatedSettingsMcpServerRouteImport } from './routes/_authenticated/settings/mcp-server'
 import { Route as AuthenticatedSettingsOrganizationRouteImport } from './routes/_authenticated/settings/organization'
 import { Route as AuthenticatedSettingsPersonalRouteImport } from './routes/_authenticated/settings/personal'
 import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_authenticated/settings/profile'
@@ -58,6 +61,17 @@ const AuthenticatedHomeRoute = AuthenticatedHomeRouteImport.update({
   path: '/home',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedLabelsRoute = AuthenticatedLabelsRouteImport.update({
+  id: '/labels',
+  path: '/labels',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedGoalsGoalIdRoute =
+  AuthenticatedGoalsGoalIdRouteImport.update({
+    id: '/$goalId',
+    path: '/$goalId',
+    getParentRoute: () => AuthenticatedGoalsRoute,
+  } as any)
 const AuthenticatedOrganizationsNewRoute =
   AuthenticatedOrganizationsNewRouteImport.update({
     id: '/organizations/new',
@@ -74,6 +88,12 @@ const AuthenticatedSettingsAppearanceRoute =
   AuthenticatedSettingsAppearanceRouteImport.update({
     id: '/settings/appearance',
     path: '/settings/appearance',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSettingsMcpServerRoute =
+  AuthenticatedSettingsMcpServerRouteImport.update({
+    id: '/settings/mcp-server',
+    path: '/settings/mcp-server',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedSettingsOrganizationRoute =
@@ -106,11 +126,14 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/verify-email': typeof VerifyEmailRoute
   '/account': typeof AuthenticatedAccountRoute
-  '/goals': typeof AuthenticatedGoalsRoute
+  '/goals': typeof AuthenticatedGoalsRouteWithChildren
   '/home': typeof AuthenticatedHomeRoute
+  '/labels': typeof AuthenticatedLabelsRoute
+  '/goals/$goalId': typeof AuthenticatedGoalsGoalIdRoute
   '/organizations/new': typeof AuthenticatedOrganizationsNewRoute
   '/settings/api-tokens': typeof AuthenticatedSettingsApiTokensRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
+  '/settings/mcp-server': typeof AuthenticatedSettingsMcpServerRoute
   '/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
   '/settings/personal': typeof AuthenticatedSettingsPersonalRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
@@ -121,11 +144,14 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/verify-email': typeof VerifyEmailRoute
   '/account': typeof AuthenticatedAccountRoute
-  '/goals': typeof AuthenticatedGoalsRoute
+  '/goals': typeof AuthenticatedGoalsRouteWithChildren
   '/home': typeof AuthenticatedHomeRoute
+  '/labels': typeof AuthenticatedLabelsRoute
+  '/goals/$goalId': typeof AuthenticatedGoalsGoalIdRoute
   '/organizations/new': typeof AuthenticatedOrganizationsNewRoute
   '/settings/api-tokens': typeof AuthenticatedSettingsApiTokensRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
+  '/settings/mcp-server': typeof AuthenticatedSettingsMcpServerRoute
   '/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
   '/settings/personal': typeof AuthenticatedSettingsPersonalRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
@@ -138,11 +164,14 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/verify-email': typeof VerifyEmailRoute
   '/_authenticated/account': typeof AuthenticatedAccountRoute
-  '/_authenticated/goals': typeof AuthenticatedGoalsRoute
+  '/_authenticated/goals': typeof AuthenticatedGoalsRouteWithChildren
   '/_authenticated/home': typeof AuthenticatedHomeRoute
+  '/_authenticated/labels': typeof AuthenticatedLabelsRoute
+  '/_authenticated/goals/$goalId': typeof AuthenticatedGoalsGoalIdRoute
   '/_authenticated/organizations/new': typeof AuthenticatedOrganizationsNewRoute
   '/_authenticated/settings/api-tokens': typeof AuthenticatedSettingsApiTokensRoute
   '/_authenticated/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
+  '/_authenticated/settings/mcp-server': typeof AuthenticatedSettingsMcpServerRoute
   '/_authenticated/settings/organization': typeof AuthenticatedSettingsOrganizationRoute
   '/_authenticated/settings/personal': typeof AuthenticatedSettingsPersonalRoute
   '/_authenticated/settings/profile': typeof AuthenticatedSettingsProfileRoute
@@ -157,9 +186,12 @@ export interface FileRouteTypes {
     | '/account'
     | '/goals'
     | '/home'
+    | '/labels'
+    | '/goals/$goalId'
     | '/organizations/new'
     | '/settings/api-tokens'
     | '/settings/appearance'
+    | '/settings/mcp-server'
     | '/settings/organization'
     | '/settings/personal'
     | '/settings/profile'
@@ -172,9 +204,12 @@ export interface FileRouteTypes {
     | '/account'
     | '/goals'
     | '/home'
+    | '/labels'
+    | '/goals/$goalId'
     | '/organizations/new'
     | '/settings/api-tokens'
     | '/settings/appearance'
+    | '/settings/mcp-server'
     | '/settings/organization'
     | '/settings/personal'
     | '/settings/profile'
@@ -188,9 +223,12 @@ export interface FileRouteTypes {
     | '/_authenticated/account'
     | '/_authenticated/goals'
     | '/_authenticated/home'
+    | '/_authenticated/labels'
+    | '/_authenticated/goals/$goalId'
     | '/_authenticated/organizations/new'
     | '/_authenticated/settings/api-tokens'
     | '/_authenticated/settings/appearance'
+    | '/_authenticated/settings/mcp-server'
     | '/_authenticated/settings/organization'
     | '/_authenticated/settings/personal'
     | '/_authenticated/settings/profile'
@@ -255,6 +293,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedHomeRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/labels': {
+      id: '/_authenticated/labels'
+      path: '/labels'
+      fullPath: '/labels'
+      preLoaderRoute: typeof AuthenticatedLabelsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/goals/$goalId': {
+      id: '/_authenticated/goals/$goalId'
+      path: '/$goalId'
+      fullPath: '/goals/$goalId'
+      preLoaderRoute: typeof AuthenticatedGoalsGoalIdRouteImport
+      parentRoute: typeof AuthenticatedGoalsRoute
+    }
     '/_authenticated/organizations/new': {
       id: '/_authenticated/organizations/new'
       path: '/organizations/new'
@@ -274,6 +326,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/appearance'
       fullPath: '/settings/appearance'
       preLoaderRoute: typeof AuthenticatedSettingsAppearanceRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/settings/mcp-server': {
+      id: '/_authenticated/settings/mcp-server'
+      path: '/settings/mcp-server'
+      fullPath: '/settings/mcp-server'
+      preLoaderRoute: typeof AuthenticatedSettingsMcpServerRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/settings/organization': {
@@ -307,13 +366,26 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedGoalsRouteChildren {
+  AuthenticatedGoalsGoalIdRoute: typeof AuthenticatedGoalsGoalIdRoute
+}
+
+const AuthenticatedGoalsRouteChildren: AuthenticatedGoalsRouteChildren = {
+  AuthenticatedGoalsGoalIdRoute: AuthenticatedGoalsGoalIdRoute,
+}
+
+const AuthenticatedGoalsRouteWithChildren =
+  AuthenticatedGoalsRoute._addFileChildren(AuthenticatedGoalsRouteChildren)
+
 interface AuthenticatedRouteChildren {
   AuthenticatedAccountRoute: typeof AuthenticatedAccountRoute
-  AuthenticatedGoalsRoute: typeof AuthenticatedGoalsRoute
+  AuthenticatedGoalsRoute: typeof AuthenticatedGoalsRouteWithChildren
   AuthenticatedHomeRoute: typeof AuthenticatedHomeRoute
+  AuthenticatedLabelsRoute: typeof AuthenticatedLabelsRoute
   AuthenticatedOrganizationsNewRoute: typeof AuthenticatedOrganizationsNewRoute
   AuthenticatedSettingsApiTokensRoute: typeof AuthenticatedSettingsApiTokensRoute
   AuthenticatedSettingsAppearanceRoute: typeof AuthenticatedSettingsAppearanceRoute
+  AuthenticatedSettingsMcpServerRoute: typeof AuthenticatedSettingsMcpServerRoute
   AuthenticatedSettingsOrganizationRoute: typeof AuthenticatedSettingsOrganizationRoute
   AuthenticatedSettingsPersonalRoute: typeof AuthenticatedSettingsPersonalRoute
   AuthenticatedSettingsProfileRoute: typeof AuthenticatedSettingsProfileRoute
@@ -322,11 +394,13 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAccountRoute: AuthenticatedAccountRoute,
-  AuthenticatedGoalsRoute: AuthenticatedGoalsRoute,
+  AuthenticatedGoalsRoute: AuthenticatedGoalsRouteWithChildren,
   AuthenticatedHomeRoute: AuthenticatedHomeRoute,
+  AuthenticatedLabelsRoute: AuthenticatedLabelsRoute,
   AuthenticatedOrganizationsNewRoute: AuthenticatedOrganizationsNewRoute,
   AuthenticatedSettingsApiTokensRoute: AuthenticatedSettingsApiTokensRoute,
   AuthenticatedSettingsAppearanceRoute: AuthenticatedSettingsAppearanceRoute,
+  AuthenticatedSettingsMcpServerRoute: AuthenticatedSettingsMcpServerRoute,
   AuthenticatedSettingsOrganizationRoute:
     AuthenticatedSettingsOrganizationRoute,
   AuthenticatedSettingsPersonalRoute: AuthenticatedSettingsPersonalRoute,

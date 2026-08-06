@@ -150,9 +150,9 @@ storage deployments:
 The archive root contains `goalkeeper-manifest.json` with the product version
 and full Git revision. It also contains an empty `runtime-config.js`
 placeholder. Set `window.__GOALKEEPER_CONFIG__` before serving the archive, or
-use the web image's `GOALKEEPER_API_URL` and `GOALKEEPER_DOCS_URL` environment
-variables. An empty API URL selects the browser origin for same-origin reverse
-proxy deployments.
+use the web image's `GOALKEEPER_API_URL`, `GOALKEEPER_DOCS_URL`, and
+`GOALKEEPER_MCP_URL` environment variables. Empty API and MCP URLs select the
+browser origin for same-origin reverse proxy deployments.
 
 Download and verify all release assets before extraction:
 

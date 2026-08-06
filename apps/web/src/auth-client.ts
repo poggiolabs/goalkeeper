@@ -304,7 +304,7 @@ export async function revokeApiToken(
   await assertApiResponse(response, "Unable to revoke API token.");
 }
 
-async function assertApiResponse(
+export async function assertApiResponse(
   response: Response,
   fallbackMessage: string,
   sessionRequired = true

@@ -1,6 +1,7 @@
 type RuntimeConfig = {
   apiBaseUrl?: string;
   docsUrl?: string;
+  mcpUrl?: string;
 };
 
 function readRuntimeConfig(): RuntimeConfig {
@@ -30,6 +31,11 @@ export const docsUrl = resolveConfiguredUrl(
   runtimeConfig.docsUrl,
   import.meta.env.VITE_DOCS_URL,
   new URL("/docs", browserOrigin).toString()
+);
+export const mcpUrl = resolveConfiguredUrl(
+  runtimeConfig.mcpUrl,
+  import.meta.env.VITE_MCP_URL,
+  new URL("/mcp", browserOrigin).toString()
 );
 
 export function safeAppUrl(

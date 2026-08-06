@@ -11,17 +11,37 @@ Goals should be specific enough to evaluate, durable across individual agent
 runs, and explicit about any constraints that affect completion.
 
 Each goal belongs to an organization and records a short title, a long-form
-detailed description that may contain Markdown, an accountable organization
-member, an ordered list of titled success criteria, and a lifecycle status:
-`active`, `paused`, `completed`, or `archived`. Organization-defined labels
-provide stable taxonomy and can be renamed without changing goal references.
+detailed description that may contain Markdown, an optional accountable
+organization member, an ordered list of titled success criteria, and four
+orthogonal dimensions:
+
+- **Lifecycle status** is `active`, `paused`, `completed`, or `archived`.
+- **Health** is `on_track`, `at_risk`, or `off_track`, or absent when health
+  has not been reported. Completing or archiving a goal clears current health.
+- **Timeframe** is either continuous or deadline-based with a target date.
+  Existing records that predate this model retain an explicit `unspecified`
+  timeframe until edited.
+- **Current evaluation** is `met`, `not_met`, or `unknown` as of a specific
+  timestamp, or absent when the goal has not been evaluated.
+
+Drafting is a client-side editing state; a new goal must choose a continuous or
+deadline-based timeframe and enters the durable domain in active status when it
+is published.
+Organization-defined labels provide stable taxonomy and can be renamed without
+changing goal references.
 
 Status is a projection of an append-only update sequence. Creating a goal
 records revision 1; every subsequent status report supplies a summary, a
 long-form Markdown-capable description, the expected current revision, and an
-idempotency key. Appending the report and advancing the goal's status and
-revision happen atomically. Metadata updates cannot change status, and goals
-are archived through a status report rather than hard-deleted.
+idempotency key. A report may also include a new evaluation and its independent
+`asOf` timestamp. Appending the report, advancing lifecycle status and revision,
+and materializing supplied health and evaluation values happen atomically. A
+report without new health or evaluation retains the corresponding current
+value. Health is recorded in update history; terminal statuses clear the goal's
+current health.
+Metadata updates cannot change status, health, or evaluation. Goals can be archived to
+preserve their history or permanently deleted with their complete update history
+when that record is no longer needed.
 
 Each update records the authorizing user separately from the immediate actor.
 The actor can be a user, client, or verified agent, with an optional agent run
