@@ -98,6 +98,9 @@ function requiredCoordinate(value: string, name: string) {
   if (!normalized || /[\r\n]/.test(normalized)) {
     throw new Error(`${name} must be a non-empty single line`);
   }
+  if (normalized.length > 255) {
+    throw new Error(`${name} must be at most 255 characters`);
+  }
   return normalized;
 }
 

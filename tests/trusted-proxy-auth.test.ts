@@ -61,6 +61,21 @@ async function signedRequest(value = assertion()) {
 }
 
 describe("trusted proxy auth backend", () => {
+  test("rejects proxy coordinates that assertions cannot represent", () => {
+    for (const coordinate of ["issuer", "audience"] as const) {
+      expect(() => createTrustedProxyAuthBackend({
+        secret,
+        issuer: "goalkeeper-cloud",
+        audience: "goalkeeper-production",
+        loginUrl: "https://gkeeper.ai/_auth/login",
+        logoutUrl: "https://gkeeper.ai/_auth/logout",
+        [coordinate]: "x".repeat(256)
+      })).toThrow(
+        `${coordinate === "issuer" ? "AUTH_PROXY_ISSUER" : "AUTH_PROXY_AUDIENCE"} must be at most 255 characters`
+      );
+    }
+  });
+
   test("accepts a fresh request-bound signed identity", async () => {
     expect(await backend().getSession(await signedRequest())).toEqual({
       id: "workos:session_01",
