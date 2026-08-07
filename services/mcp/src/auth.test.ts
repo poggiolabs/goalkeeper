@@ -7,13 +7,17 @@ import {
 
 function provider(
   issuer: string,
-  registrationEndpoint?: string
+  registrationEndpoint?: string,
+  endpoints: {
+    authorization?: string;
+    token?: string;
+  } = {}
 ): McpOAuthProvider {
   return {
     metadata: {
       issuer,
-      authorization_endpoint: `${issuer}/authorize`,
-      token_endpoint: `${issuer}/token`,
+      authorization_endpoint: endpoints.authorization ?? `${issuer}/authorize`,
+      token_endpoint: endpoints.token ?? `${issuer}/token`,
       ...(registrationEndpoint
         ? { registration_endpoint: registrationEndpoint }
         : {}),
@@ -40,6 +44,25 @@ describe("MCP OAuth provider configuration", () => {
         false
       )
     ).toThrow("MCP OAuth dynamic registration endpoint must use HTTPS");
+  });
+
+  test("requires absolute HTTPS authorization and token endpoints", () => {
+    expect(() =>
+      assertOAuthProviderConfiguration(
+        provider("https://auth.example.com", undefined, {
+          authorization: "http://auth.example.com/authorize"
+        }),
+        false
+      )
+    ).toThrow("MCP OAuth authorization endpoint must use HTTPS");
+    expect(() =>
+      assertOAuthProviderConfiguration(
+        provider("https://auth.example.com", undefined, {
+          token: "not-a-url"
+        }),
+        false
+      )
+    ).toThrow("MCP OAuth token endpoint must be a valid URL");
   });
 
   test("limits explicitly insecure provider metadata to HTTP loopback URLs", () => {
