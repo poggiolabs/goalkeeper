@@ -1,6 +1,6 @@
 import type { SQL } from "bun";
 import { hashToken } from "../api-tokens/service";
-import type { EmailDelivery } from "./email-delivery";
+import type { EmailDelivery } from "../notifications/email-delivery";
 import {
   AuthError,
   type AuthSession,

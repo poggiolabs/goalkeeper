@@ -4,7 +4,7 @@ import { migrateApiDatabase } from "../services/api/src/api-tokens/postgres";
 import type {
   EmailDelivery,
   EmailMessage
-} from "../services/api/src/auth/email-delivery";
+} from "../services/api/src/notifications/email-delivery";
 import {
   createPostgresEmailAuthBackend,
   verifyEmailByOperator

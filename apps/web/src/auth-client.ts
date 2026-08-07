@@ -30,6 +30,33 @@ export type OrganizationContext = {
   organizations: OrganizationSummary[];
 };
 
+export type InvitationStatus = "pending" | "accepted" | "revoked" | "expired";
+
+export type OrganizationInvitation = {
+  id: string;
+  email: string;
+  role: Exclude<OrganizationRole, "owner">;
+  status: InvitationStatus;
+  invitedByUserId: string;
+  expiresAt: string;
+  createdAt: string;
+};
+
+/**
+ * The acceptance link is present only on the response that issued it. The
+ * token is stored hashed, so a refresh cannot recover it — reissue instead.
+ */
+export type IssuedOrganizationInvitation = {
+  invitation: OrganizationInvitation;
+  acceptUrl: string;
+  emailSent: boolean;
+};
+
+export type AcceptedOrganizationInvitation = OrganizationContext & {
+  organizationId: string;
+  role: Exclude<OrganizationRole, "owner">;
+};
+
 export type AuthConfiguration = {
   method: "redirect" | "email";
 };
@@ -246,6 +273,85 @@ export async function updateOrganizationMemberRole(
   await assertApiResponse(response, "Unable to update member role.");
   const result = (await response.json()) as { member: OrganizationMember };
   return result.member;
+}
+
+export async function listOrganizationInvitations(
+  apiUrl: string,
+  signal?: AbortSignal
+): Promise<OrganizationInvitation[]> {
+  const response = await fetch(
+    new URL("/v1/organizations/current/invitations", apiUrl),
+    { credentials: "include", signal }
+  );
+  await assertApiResponse(response, "Unable to load invitations.");
+  const result = (await response.json()) as {
+    invitations: OrganizationInvitation[];
+  };
+  return result.invitations;
+}
+
+export async function createOrganizationInvitation(
+  apiUrl: string,
+  email: string,
+  role: Exclude<OrganizationRole, "owner">
+): Promise<IssuedOrganizationInvitation> {
+  const response = await fetch(
+    new URL("/v1/organizations/current/invitations", apiUrl),
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, role })
+    }
+  );
+  await assertApiResponse(response, "Unable to create the invitation.");
+  return (await response.json()) as IssuedOrganizationInvitation;
+}
+
+export async function revokeOrganizationInvitation(
+  apiUrl: string,
+  invitationId: string
+): Promise<void> {
+  const response = await fetch(
+    new URL(
+      `/v1/organizations/current/invitations/${encodeURIComponent(invitationId)}`,
+      apiUrl
+    ),
+    { method: "DELETE", credentials: "include" }
+  );
+  await assertApiResponse(response, "Unable to revoke the invitation.");
+}
+
+export async function resendOrganizationInvitation(
+  apiUrl: string,
+  invitationId: string
+): Promise<IssuedOrganizationInvitation> {
+  const response = await fetch(
+    new URL(
+      `/v1/organizations/current/invitations/${encodeURIComponent(invitationId)}/resend`,
+      apiUrl
+    ),
+    { method: "POST", credentials: "include" }
+  );
+  await assertApiResponse(response, "Unable to reissue the invitation.");
+  return (await response.json()) as IssuedOrganizationInvitation;
+}
+
+export async function acceptOrganizationInvitation(
+  apiUrl: string,
+  token: string
+): Promise<AcceptedOrganizationInvitation> {
+  const response = await fetch(
+    new URL("/v1/organizations/invitations/accept", apiUrl),
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token })
+    }
+  );
+  await assertApiResponse(response, "Unable to accept the invitation.");
+  return (await response.json()) as AcceptedOrganizationInvitation;
 }
 
 export async function listApiTokens(

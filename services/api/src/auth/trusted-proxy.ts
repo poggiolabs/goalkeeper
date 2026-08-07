@@ -20,7 +20,7 @@ export type TrustedProxyAssertion = {
   method: string;
   path: string;
   sessionId: string;
-  user: AuthUser;
+  user: AuthUser & { emailVerified?: boolean };
 };
 
 export function createTrustedProxyAuthBackend(options: {
@@ -178,7 +178,12 @@ function decodeAssertion(encoded: string): TrustedProxyAssertion | null {
     assertion.user.displayName.length > 100 ||
     typeof assertion.user.email !== "string" ||
     assertion.user.email !== assertion.user.email.toLowerCase() ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assertion.user.email)
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assertion.user.email) ||
+    // Authorization is keyed to the address — organization invitations are
+    // claimed by it — so a proxy that admits it has not verified ownership
+    // must be refused. Absent stays acceptable for v1 proxies that predate
+    // the field; see the capability note in the trusted-proxy docs.
+    ("emailVerified" in assertion.user && assertion.user.emailVerified !== true)
   ) {
     return null;
   }

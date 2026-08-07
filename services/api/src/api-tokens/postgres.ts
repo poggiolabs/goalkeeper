@@ -879,6 +879,71 @@ export async function migrateApiDatabase(sql: SQL): Promise<void> {
         values ('016_goal_health')
       `;
     }
+
+    const organizationInvitationsApplied = await transaction<{ id: string }[]>`
+      select id from api_schema_migrations where id = '017_organization_invitations'
+    `;
+    if (organizationInvitationsApplied.length === 0) {
+      await transaction`
+        create table organization_invitations (
+          id uuid primary key default gen_random_uuid(),
+          organization_id uuid not null references organizations(id) on delete cascade,
+          email text not null,
+          role text not null,
+          token_hash text not null unique,
+          invited_by_user_id text not null,
+          status text not null default 'pending',
+          expires_at timestamptz not null,
+          accepted_at timestamptz,
+          accepted_by_user_id text,
+          revoked_at timestamptz,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now(),
+          constraint organization_invitations_email_lowercase_check
+            check (email = lower(email)),
+          constraint organization_invitations_email_format_check
+            check (email ~ '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$'),
+          constraint organization_invitations_email_length_check
+            check (char_length(email) between 3 and 320),
+          constraint organization_invitations_role_check
+            check (role in ('admin', 'member')),
+          constraint organization_invitations_hash_format_check
+            check (token_hash ~ '^[0-9a-f]{64}$'),
+          constraint organization_invitations_status_check
+            check (status in ('pending', 'accepted', 'revoked', 'expired')),
+          constraint organization_invitations_expiry_check
+            check (expires_at > created_at),
+          constraint organization_invitations_accepted_consistency_check
+            check (
+              (status = 'accepted') = (accepted_at is not null)
+              and (accepted_at is null) = (accepted_by_user_id is null)
+            ),
+          constraint organization_invitations_revoked_consistency_check
+            check ((status = 'revoked') = (revoked_at is not null))
+        )
+      `;
+      // Postgres rejects volatile now() in a partial index predicate, so
+      // "pending" is a stored state that creation and acceptance transition,
+      // never a computed one.
+      await transaction`
+        create unique index organization_invitations_pending_idx
+        on organization_invitations(organization_id, email)
+        where status = 'pending'
+      `;
+      await transaction`
+        create index organization_invitations_lookup_idx
+        on organization_invitations(email)
+        where status = 'pending'
+      `;
+      await transaction`
+        create index organization_invitations_organization_created_idx
+        on organization_invitations(organization_id, created_at desc)
+      `;
+      await transaction`
+        insert into api_schema_migrations (id)
+        values ('017_organization_invitations')
+      `;
+    }
   });
 }
 

@@ -113,6 +113,40 @@ describe("trusted proxy auth backend", () => {
     }))).toBeNull();
   });
 
+  test("refuses an assertion whose proxy admits the email is unverified", async () => {
+    // Invitations are claimed by email address, so an unverified address is
+    // an account-takeover vector. Absent remains acceptable for proxies that
+    // predate the field.
+    expect(
+      await backend().getSession(
+        await signedRequest(
+          assertion({
+            user: {
+              id: "workos:user_01",
+              displayName: "Ada Lovelace",
+              email: "ada@example.com",
+              emailVerified: false
+            }
+          })
+        )
+      )
+    ).toBeNull();
+
+    const verified = await backend().getSession(
+      await signedRequest(
+        assertion({
+          user: {
+            id: "workos:user_01",
+            displayName: "Ada Lovelace",
+            email: "ada@example.com",
+            emailVerified: true
+          }
+        })
+      )
+    );
+    expect(verified?.user.email).toBe("ada@example.com");
+  });
+
   test("delegates login and logout to the managed auth surface", async () => {
     const login = await backend().beginLogin({
       request: new Request("https://gkeeper.ai/v1/auth/login"),

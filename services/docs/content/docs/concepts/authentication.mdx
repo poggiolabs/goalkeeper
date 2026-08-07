@@ -89,6 +89,19 @@ proxy must strip both headers from every client request before signing its own
 values. The API must not be directly reachable around that proxy, and the
 shared secret must be unique to the deployment.
 
+### Email verification is part of the contract
+
+Organization invitations are claimed by email address, so a proxy that signs an
+address it has not verified turns an invitation into an account-takeover
+vector. A proxy must only sign assertions for verified addresses, and should
+state so explicitly with `user.emailVerified: true`.
+
+An assertion carrying `emailVerified: false` is refused. The field being absent
+is still accepted, so proxies written before it existed keep working — but that
+tolerance is the reason the guarantee currently rests on proxy behaviour rather
+than on anything Goalkeeper can check. Any new proxy implementation should send
+the field.
+
 Provider SDKs, access tokens, refresh tokens, and cookies remain in the managed
 proxy. Goalkeeper persists only its own organization and product data keyed by
 the canonical provider-qualified user ID.
