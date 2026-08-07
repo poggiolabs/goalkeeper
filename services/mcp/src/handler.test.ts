@@ -225,6 +225,18 @@ describe("Goalkeeper MCP server", () => {
   test("publishes least-privilege RFC 9728 metadata and OAuth challenges", async () => {
     const harness = await createHarness();
     const oauthProvider: McpOAuthProvider = {
+      scopesSupported: [
+        "goals:read",
+        "goals:write",
+        "labels:read",
+        "labels:write"
+      ],
+      initialScopes: [
+        "goals:read",
+        "goals:write",
+        "labels:read",
+        "labels:write"
+      ],
       metadata: {
         issuer: "https://auth.example.com",
         authorization_endpoint: "https://auth.example.com/authorize",
@@ -258,11 +270,20 @@ describe("Goalkeeper MCP server", () => {
       scopes_supported: [
         "goals:read",
         "goals:write",
-        "goals:read:all",
-        "goals:write:all",
         "labels:read",
         "labels:write"
       ]
+    });
+
+    const rootProtectedMetadata = await handler.fetch(
+      new Request(
+        "https://mcp.example.com/.well-known/oauth-protected-resource"
+      )
+    );
+    expect(rootProtectedMetadata.status).toBe(200);
+    expect(await rootProtectedMetadata.json()).toMatchObject({
+      resource: "https://mcp.example.com/mcp",
+      authorization_servers: ["https://auth.example.com"]
     });
 
     const authorizationMetadata = await handler.fetch(
@@ -301,7 +322,7 @@ describe("Goalkeeper MCP server", () => {
       'resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/mcp"'
     );
     expect(unauthorized.headers.get("www-authenticate")).toContain(
-      'scope="goals:read"'
+      'scope="goals:read goals:write labels:read labels:write"'
     );
     await handler.close();
     await harness.handler.close();

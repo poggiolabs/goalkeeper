@@ -31,6 +31,10 @@ export interface McpOAuthProvider {
     issuer: string;
     registration_endpoint?: string;
   };
+  /** Minimal scopes advertised for initial connector functionality. */
+  readonly scopesSupported?: readonly string[];
+  /** Scopes requested by the first unauthenticated MCP challenge. */
+  readonly initialScopes?: readonly string[];
   /**
    * Validate signature or introspection state, issuer, expiry, and the exact
    * RFC 8707 resource audience before returning an identity.
@@ -198,6 +202,16 @@ export function assertOAuthProviderConfiguration(
   assertSecureOAuthUrl(
     provider.metadata.issuer,
     "issuer",
+    dangerouslyAllowInsecureIssuerUrl
+  );
+  assertSecureOAuthUrl(
+    provider.metadata.authorization_endpoint,
+    "authorization endpoint",
+    dangerouslyAllowInsecureIssuerUrl
+  );
+  assertSecureOAuthUrl(
+    provider.metadata.token_endpoint,
+    "token endpoint",
     dangerouslyAllowInsecureIssuerUrl
   );
   if (provider.metadata.registration_endpoint) {

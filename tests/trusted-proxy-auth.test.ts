@@ -12,7 +12,7 @@ const now = new Date("2026-08-05T20:00:00Z");
 function backend() {
   return createTrustedProxyAuthBackend({
     secret,
-    issuer: "goalkeeper-cloud",
+    issuer: "deployment-ingress",
     audience: "goalkeeper-production",
     loginUrl: "https://gkeeper.ai/_auth/login",
     logoutUrl: "https://gkeeper.ai/_auth/logout",
@@ -23,14 +23,14 @@ function backend() {
 function assertion(overrides: Partial<TrustedProxyAssertion> = {}) {
   return {
     v: 1,
-    iss: "goalkeeper-cloud",
+    iss: "deployment-ingress",
     aud: "goalkeeper-production",
     iat: Math.floor(now.getTime() / 1000),
     method: "GET",
     path: "/v1/auth/session?fresh=1",
-    sessionId: "workos:session_01",
+    sessionId: "external:session_01",
     user: {
-      id: "workos:user_01",
+      id: "external:user_01",
       displayName: "Ada Lovelace",
       email: "ada@example.com"
     },
@@ -65,7 +65,7 @@ describe("trusted proxy auth backend", () => {
     for (const coordinate of ["issuer", "audience"] as const) {
       expect(() => createTrustedProxyAuthBackend({
         secret,
-        issuer: "goalkeeper-cloud",
+        issuer: "deployment-ingress",
         audience: "goalkeeper-production",
         loginUrl: "https://gkeeper.ai/_auth/login",
         logoutUrl: "https://gkeeper.ai/_auth/logout",
@@ -78,9 +78,9 @@ describe("trusted proxy auth backend", () => {
 
   test("accepts a fresh request-bound signed identity", async () => {
     expect(await backend().getSession(await signedRequest())).toEqual({
-      id: "workos:session_01",
+      id: "external:session_01",
       user: {
-        id: "workos:user_01",
+        id: "external:user_01",
         displayName: "Ada Lovelace",
         email: "ada@example.com"
       }
@@ -90,7 +90,7 @@ describe("trusted proxy auth backend", () => {
   test("rejects tampering, replay on another path, and stale assertions", async () => {
     const tampered = await signedRequest();
     tampered.headers.set(trustedProxyAssertionHeader, base64Url(JSON.stringify(
-      assertion({ sessionId: "workos:attacker" })
+      assertion({ sessionId: "external:attacker" })
     )));
     expect(await backend().getSession(tampered)).toBeNull();
 
@@ -122,7 +122,7 @@ describe("trusted proxy auth backend", () => {
         await signedRequest(
           assertion({
             user: {
-              id: "workos:user_01",
+              id: "external:user_01",
               displayName: "Ada Lovelace",
               email: "ada@example.com",
               emailVerified: false
@@ -136,7 +136,7 @@ describe("trusted proxy auth backend", () => {
       await signedRequest(
         assertion({
           user: {
-            id: "workos:user_01",
+            id: "external:user_01",
             displayName: "Ada Lovelace",
             email: "ada@example.com",
             emailVerified: true

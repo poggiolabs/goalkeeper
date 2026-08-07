@@ -11,3 +11,22 @@ export function parseMcpPort(value: string | undefined): number {
   }
   return port;
 }
+
+const oauthScopeToken = /^[\x21\x23-\x5b\x5d-\x7e]+$/;
+
+export function parseMcpScopeList(
+  value: string | undefined,
+  name: string
+): string[] | undefined {
+  if (value === undefined) return undefined;
+  const entries = [...new Set(value.split(",").map((entry) => entry.trim()))];
+  if (
+    entries.length === 0 ||
+    entries.some((entry) => !oauthScopeToken.test(entry))
+  ) {
+    throw new Error(
+      `${name} must be a comma-separated list of RFC 6749 scope-token values`
+    );
+  }
+  return entries;
+}

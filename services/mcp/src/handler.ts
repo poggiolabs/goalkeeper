@@ -66,6 +66,8 @@ export function createGoalkeeperMcpHandler(
   const protectedResourceMetadataPath = new URL(
     getOAuthProtectedResourceMetadataUrl(resource)
   ).pathname;
+  const rootProtectedResourceMetadataPath =
+    "/.well-known/oauth-protected-resource";
   const mcp = createMcpHandler(
     ({ authInfo }) => {
       if (!authInfo) throw new Error("Authenticated MCP request is missing auth info");
@@ -82,9 +84,15 @@ export function createGoalkeeperMcpHandler(
     resource,
     async fetch(request: Request): Promise<Response> {
       const url = new URL(request.url);
+      const isRootMetadataAlias =
+        url.pathname === rootProtectedResourceMetadataPath;
+      const metadataRequest = isRootMetadataAlias
+        ? new Request(new URL(protectedResourceMetadataPath, url), request)
+        : request;
       const metadata =
-        metadataOptions && url.pathname === protectedResourceMetadataPath
-          ? oauthMetadataResponse(request, metadataOptions)
+        metadataOptions &&
+        (url.pathname === protectedResourceMetadataPath || isRootMetadataAlias)
+          ? oauthMetadataResponse(metadataRequest, metadataOptions)
           : undefined;
       if (metadata) return metadata;
 
@@ -102,7 +110,12 @@ export function createGoalkeeperMcpHandler(
       const requiredScope = requiredToolScope(request);
       const authInfo = await requireAuth(request);
       if (authInfo instanceof Response) {
-        return withScopeChallenge(authInfo, requiredScope ?? initialMcpScopes[0]);
+        return withScopeChallenge(
+          authInfo,
+          requiredScope
+            ? [requiredScope]
+            : (dependencies.oauthProvider?.initialScopes ?? initialMcpScopes)
+        );
       }
       if (
         requiredScope &&
@@ -176,7 +189,7 @@ function createMetadataOptions(
   const options = {
     oauthMetadata: provider.metadata,
     resourceServerUrl: resource,
-    scopesSupported: [...apiTokenScopes],
+    scopesSupported: [...(provider.scopesSupported ?? apiTokenScopes)],
     resourceName: "Goalkeeper MCP",
     dangerouslyAllowInsecureIssuerUrl
   } satisfies AuthMetadataOptions;
@@ -188,7 +201,7 @@ const initialMcpScopes = ["goals:read"] as const;
 
 function withScopeChallenge(
   response: Response,
-  requiredScope: RequiredToolScope
+  requiredScopes: readonly string[]
 ): Response {
   if (response.status !== 401) return response;
   const challenge = response.headers.get("www-authenticate");
@@ -197,7 +210,7 @@ function withScopeChallenge(
   const headers = new Headers(response.headers);
   headers.set(
     "www-authenticate",
-    `${challenge}, scope="${requiredScope}"`
+    `${challenge}, scope="${requiredScopes.join(" ")}"`
   );
   return new Response(response.body, {
     status: response.status,

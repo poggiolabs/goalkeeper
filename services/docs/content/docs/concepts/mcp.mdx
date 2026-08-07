@@ -34,6 +34,56 @@ Resource Metadata and includes its URL in bearer challenges. Authorization
 server and registration endpoints are discovered from provider metadata;
 Goalkeeper does not proxy or reimplement them.
 
+The packaged MCP service can enable the provider-neutral `trusted_proxy`
+OAuth adapter for deployments whose private ingress validates external access
+tokens. The ingress replaces the external token with a signed, request-lived
+identity assertion containing the deployment-selected organization and scopes;
+Goalkeeper verifies the private assertion and rechecks live organization
+membership. Provider SDKs, endpoints, consent UX, and claim conventions remain
+deployment concerns and are not included in the portable service.
+
+Configure the adapter with:
+
+```dotenv
+MCP_OAUTH_PROVIDER=trusted_proxy
+MCP_OAUTH_PROXY_SECRET=<at-least-32-byte-deployment-secret>
+MCP_OAUTH_PROXY_ISSUER=deployment-ingress
+MCP_OAUTH_PROXY_AUDIENCE=goalkeeper-mcp-production
+MCP_OAUTH_ISSUER=https://auth.example.com
+MCP_OAUTH_AUTHORIZATION_ENDPOINT=https://auth.example.com/oauth2/authorize
+MCP_OAUTH_TOKEN_ENDPOINT=https://auth.example.com/oauth2/token
+# MCP_OAUTH_REGISTRATION_ENDPOINT=https://auth.example.com/oauth2/register
+# MCP_OAUTH_CLIENT_ID_METADATA_DOCUMENT_SUPPORTED=true
+# MCP_OAUTH_SCOPES_SUPPORTED=goals:read,goals:write,labels:read,labels:write
+# MCP_OAUTH_INITIAL_SCOPES=goals:read,labels:read
+```
+
+The authorization and token endpoints are required. Configure a registration
+endpoint, Client ID Metadata Document support, or both only when the selected
+authorization server implements them. Scope settings are comma-separated RFC
+6749 `scope-token` values. Goalkeeper advertises the authorization-code and
+S256 PKCE contract required by MCP, without claiming optional grant or token
+authentication methods on behalf of the authorization server.
+
+For each accepted external access token, the ingress sends this private bearer
+credential to Goalkeeper:
+
+```text
+<base64url(JSON assertion)>.<base64url(HMAC-SHA-256(encoded assertion))>
+```
+
+The version-1 assertion contains `iss`, `aud`, Unix `iat` and `exp`, the exact
+canonical `resource`, `clientId`, granted `scopes`, canonical `userId`, and the
+user-selected `organizationId`. Its lifetime must not exceed 30 seconds.
+Goalkeeper allows at most five seconds of future clock skew, verifies the exact
+issuer, audience, and resource, and confirms that the user still belongs to the
+selected organization before granting access.
+
+The ingress must strip and replace every client-supplied `Authorization` header.
+The MCP service must not be directly reachable around that ingress, and the
+HMAC secret must be unique to the deployment and unavailable to external OAuth
+clients.
+
 `PUBLIC_MCP_URL` is the canonical OAuth resource identifier. It must use HTTPS
 and must not contain a fragment. Plain HTTP is accepted only for explicit
 `localhost`, `127.0.0.1`, or `[::1]` development URLs. A trailing slash in its
