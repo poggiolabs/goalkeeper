@@ -16,7 +16,7 @@ export interface EmailDelivery {
 
 export class LogEmailDelivery implements EmailDelivery {
   async send(message: EmailMessage): Promise<void> {
-    console.log("Development email", message);
+    console.log("Email not sent (logging only)", message);
   }
 }
 
