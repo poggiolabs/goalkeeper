@@ -10,8 +10,12 @@ import type {
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-/** Matches WorkOS's invitationExpiry so the two systems agree on lifetime. */
-const invitationLifetimeMs = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Seven days, matching WorkOS's invitationExpiry so a deployment fronted by
+ * AuthKit does not disagree with it about how long an invitation lives.
+ * Override per deployment through OrganizationServiceOptions.
+ */
+export const defaultInvitationLifetimeMs = 7 * 24 * 60 * 60 * 1000;
 
 export class OrganizationError extends Error {
   constructor(
@@ -29,6 +33,7 @@ export type OrganizationService = ReturnType<typeof createOrganizationService>;
 export type OrganizationServiceOptions = {
   webOrigin?: string;
   emailDelivery?: EmailDelivery | null;
+  invitationLifetimeMs?: number;
   now?: () => Date;
   randomBytes?: (length: number) => Uint8Array;
 };
@@ -42,6 +47,11 @@ export function createOrganizationService(
     options.randomBytes ?? ((length: number) => crypto.getRandomValues(new Uint8Array(length)));
   const emailDelivery = options.emailDelivery ?? null;
   const webOrigin = options.webOrigin ?? "";
+  const invitationLifetimeMs =
+    options.invitationLifetimeMs ?? defaultInvitationLifetimeMs;
+  if (!Number.isInteger(invitationLifetimeMs) || invitationLifetimeMs < 1) {
+    throw new Error("invitationLifetimeMs must be a positive integer");
+  }
 
   function acceptUrl(token: string) {
     return webOrigin ? `${webOrigin}/invitations/${token}` : `/invitations/${token}`;

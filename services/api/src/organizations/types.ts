@@ -33,15 +33,6 @@ export type OrganizationInvitation = {
   createdAt: Date;
 };
 
-/**
- * An invitation plus the single-use plaintext token. Returned only by
- * creation and resend; the token is stored hashed and cannot be recovered.
- */
-export type IssuedOrganizationInvitation = {
-  invitation: OrganizationInvitation;
-  token: string;
-};
-
 export type AcceptedInvitation = {
   organizationId: string;
   role: Exclude<OrganizationRole, "owner">;

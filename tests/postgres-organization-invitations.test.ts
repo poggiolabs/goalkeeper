@@ -355,6 +355,29 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL organization invitations", () => {
     }
   });
 
+  test("the invitation lifetime is configurable per deployment", async () => {
+    const owner = user("Ada Lovelace", "owner13@example.com");
+    const shortLived = createOrganizationService(repository, {
+      webOrigin: "https://goalkeep.test",
+      emailDelivery: mailer,
+      invitationLifetimeMs: 60_000
+    });
+    await shortLived.ensureForUser(owner);
+    const issued = await shortLived.createInvitationForUser(owner, {
+      email: "shortlived@example.com",
+      role: "member"
+    });
+
+    const lifetime =
+      new Date(issued.invitation.expiresAt).getTime() -
+      new Date(issued.invitation.createdAt).getTime();
+    expect(lifetime).toBeLessThan(5 * 60_000);
+
+    expect(() =>
+      createOrganizationService(repository, { invitationLifetimeMs: 0 })
+    ).toThrow("invitationLifetimeMs must be a positive integer");
+  });
+
   test("the plaintext token is never stored or listed", async () => {
     const owner = user("Ada Lovelace", "owner12@example.com");
     await organizations.ensureForUser(owner);
