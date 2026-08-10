@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/poggiolabs/goalkeeper/compare/v0.3.0...v0.4.0) (2026-08-10)
+
+
+### Features
+
+* **api:** Add organization invitations ([#21](https://github.com/poggiolabs/goalkeeper/issues/21)) ([ea52895](https://github.com/poggiolabs/goalkeeper/commit/ea52895e6eb64610b599ff1dbf8208e8785edf17))
+* **mcp:** add trusted OAuth proxy adapter ([#19](https://github.com/poggiolabs/goalkeeper/issues/19)) ([c57adf9](https://github.com/poggiolabs/goalkeeper/commit/c57adf9749c256b35b706f304ef627298601d432))
+
 ## [0.3.0](https://github.com/poggiolabs/goalkeeper/compare/v0.2.0...v0.3.0) (2026-08-06)
 
 
