@@ -44,6 +44,7 @@
       "version": "0.0.0",
       "dependencies": {
         "emailjs": "^5.0.2",
+        "hono": "^4.13.0",
       },
     },
     "services/docs": {
