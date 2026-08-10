@@ -578,6 +578,241 @@ export const apiOpenApiDocument = {
         }
       }
     },
+    [apiRoutes.organizationInvitationsList.path]: {
+      get: {
+        operationId: "listCurrentOrganizationInvitations",
+        summary: "List pending invitations",
+        description:
+          "Lists pending invitations for the active organization. Any member may read them. Invitation tokens are never returned.",
+        tags: ["Organizations"],
+        responses: {
+          "200": {
+            description: "The pending invitations were listed.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ListOrganizationInvitationsResponse"
+                }
+              }
+            }
+          },
+          "401": errorResponse,
+          "403": {
+            description: "The user is not a member of the organization.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      post: {
+        operationId: "createCurrentOrganizationInvitation",
+        summary: "Invite someone to the active organization",
+        description:
+          "Creates an invitation for an email address. The current user must be an owner or administrator. The acceptance link is returned only in this response; it cannot be recovered later.",
+        tags: ["Organizations"],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/CreateOrganizationInvitationRequest"
+              }
+            }
+          }
+        },
+        responses: {
+          "201": {
+            description: "The invitation was created.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/IssuedOrganizationInvitation"
+                }
+              }
+            }
+          },
+          "400": {
+            description: "The email address or role is invalid.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": errorResponse,
+          "403": {
+            description:
+              "Administrator access is required or the origin is not allowed.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          },
+          "409": {
+            description: "An invitation for this address is already pending.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    [apiRoutes.organizationInvitationRevoke.path]: {
+      delete: {
+        operationId: "revokeCurrentOrganizationInvitation",
+        summary: "Revoke a pending invitation",
+        description:
+          "Revokes a pending invitation. The current user must be an owner or administrator.",
+        tags: ["Organizations"],
+        parameters: [
+          {
+            name: "invitationId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" }
+          }
+        ],
+        responses: {
+          "204": { description: "The invitation was revoked." },
+          "400": {
+            description: "The invitation identifier is invalid.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": errorResponse,
+          "403": {
+            description:
+              "Administrator access is required, the invitation is not pending, or the origin is not allowed.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    [apiRoutes.organizationInvitationResend.path]: {
+      post: {
+        operationId: "resendCurrentOrganizationInvitation",
+        summary: "Reissue a pending invitation",
+        description:
+          "Issues a new token for a pending invitation, invalidating the previous link and extending the expiry. Required because the plaintext token is returned only once.",
+        tags: ["Organizations"],
+        parameters: [
+          {
+            name: "invitationId",
+            in: "path",
+            required: true,
+            schema: { type: "string", format: "uuid" }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "The invitation was reissued with a new link.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/IssuedOrganizationInvitation"
+                }
+              }
+            }
+          },
+          "400": {
+            description: "The invitation identifier is invalid.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": errorResponse,
+          "403": {
+            description:
+              "Administrator access is required, the invitation is not pending, or the origin is not allowed.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    [apiRoutes.organizationInvitationAccept.path]: {
+      post: {
+        operationId: "acceptOrganizationInvitation",
+        summary: "Accept an invitation",
+        description:
+          "Consumes an invitation token and joins the authenticated user to the organization, making it active. The token must have been issued to the session's verified email address.",
+        tags: ["Organizations"],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/AcceptOrganizationInvitationRequest"
+              }
+            }
+          }
+        },
+        responses: {
+          "200": {
+            description: "The invitation was accepted.",
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/AcceptOrganizationInvitationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            description: "The token is malformed.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": errorResponse,
+          "403": {
+            description:
+              "The invitation was issued to a different email address, or the origin is not allowed.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            description: "The invitation is expired, revoked, or already used.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          },
+          "409": {
+            description: "The user already belongs to the organization.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
     [apiRoutes.apiTokensList.path]: {
       get: {
         operationId: "listApiTokens",
@@ -1171,6 +1406,101 @@ export const apiOpenApiDocument = {
             type: "array",
             minItems: 1,
             items: { $ref: "#/components/schemas/OrganizationMember" }
+          }
+        }
+      },
+      InvitableOrganizationRole: {
+        type: "string",
+        enum: ["admin", "member"]
+      },
+      OrganizationInvitation: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "id",
+          "email",
+          "role",
+          "status",
+          "invitedByUserId",
+          "expiresAt",
+          "createdAt"
+        ],
+        properties: {
+          id: { type: "string", format: "uuid" },
+          email: { type: "string", format: "email" },
+          role: { $ref: "#/components/schemas/InvitableOrganizationRole" },
+          status: {
+            type: "string",
+            enum: ["pending", "accepted", "revoked", "expired"]
+          },
+          invitedByUserId: { type: "string", minLength: 1 },
+          expiresAt: { type: "string", format: "date-time" },
+          createdAt: { type: "string", format: "date-time" }
+        }
+      },
+      ListOrganizationInvitationsResponse: {
+        type: "object",
+        additionalProperties: false,
+        required: ["invitations"],
+        properties: {
+          invitations: {
+            type: "array",
+            items: { $ref: "#/components/schemas/OrganizationInvitation" }
+          }
+        }
+      },
+      CreateOrganizationInvitationRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["email", "role"],
+        properties: {
+          email: { type: "string", format: "email", maxLength: 320 },
+          role: { $ref: "#/components/schemas/InvitableOrganizationRole" }
+        }
+      },
+      IssuedOrganizationInvitation: {
+        type: "object",
+        additionalProperties: false,
+        required: ["invitation", "acceptUrl", "emailSent"],
+        properties: {
+          invitation: { $ref: "#/components/schemas/OrganizationInvitation" },
+          acceptUrl: {
+            type: "string",
+            description:
+              "Single-use acceptance link. Returned only here; the token is stored hashed and cannot be recovered. Use the resend operation to issue a replacement."
+          },
+          emailSent: {
+            type: "boolean",
+            description:
+              "False when no mailer is configured or delivery failed. The invitation is still valid and the link above can be shared directly."
+          }
+        }
+      },
+      AcceptOrganizationInvitationRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["token"],
+        properties: {
+          token: { type: "string", minLength: 1, maxLength: 200 }
+        }
+      },
+      AcceptOrganizationInvitationResponse: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "organizationId",
+          "role",
+          "activeOrganizationId",
+          "organizations"
+        ],
+        properties: {
+          organizationId: { type: "string", format: "uuid" },
+          role: { $ref: "#/components/schemas/InvitableOrganizationRole" },
+          activeOrganizationId: { type: "string", format: "uuid" },
+          organizations: {
+            type: "array",
+            minItems: 1,
+            items: { $ref: "#/components/schemas/OrganizationSummary" }
           }
         }
       },

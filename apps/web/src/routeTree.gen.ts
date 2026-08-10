@@ -17,6 +17,7 @@ import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedGoalsRouteImport } from './routes/_authenticated/goals'
 import { Route as AuthenticatedHomeRouteImport } from './routes/_authenticated/home'
 import { Route as AuthenticatedLabelsRouteImport } from './routes/_authenticated/labels'
+import { Route as InvitationsTokenRouteImport } from './routes/invitations.$token'
 import { Route as AuthenticatedGoalsGoalIdRouteImport } from './routes/_authenticated/goals.$goalId'
 import { Route as AuthenticatedOrganizationsNewRouteImport } from './routes/_authenticated/organizations/new'
 import { Route as AuthenticatedSettingsApiTokensRouteImport } from './routes/_authenticated/settings/api-tokens'
@@ -65,6 +66,11 @@ const AuthenticatedLabelsRoute = AuthenticatedLabelsRouteImport.update({
   id: '/labels',
   path: '/labels',
   getParentRoute: () => AuthenticatedRoute,
+} as any)
+const InvitationsTokenRoute = InvitationsTokenRouteImport.update({
+  id: '/invitations/$token',
+  path: '/invitations/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedGoalsGoalIdRoute =
   AuthenticatedGoalsGoalIdRouteImport.update({
@@ -129,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/goals': typeof AuthenticatedGoalsRouteWithChildren
   '/home': typeof AuthenticatedHomeRoute
   '/labels': typeof AuthenticatedLabelsRoute
+  '/invitations/$token': typeof InvitationsTokenRoute
   '/goals/$goalId': typeof AuthenticatedGoalsGoalIdRoute
   '/organizations/new': typeof AuthenticatedOrganizationsNewRoute
   '/settings/api-tokens': typeof AuthenticatedSettingsApiTokensRoute
@@ -147,6 +154,7 @@ export interface FileRoutesByTo {
   '/goals': typeof AuthenticatedGoalsRouteWithChildren
   '/home': typeof AuthenticatedHomeRoute
   '/labels': typeof AuthenticatedLabelsRoute
+  '/invitations/$token': typeof InvitationsTokenRoute
   '/goals/$goalId': typeof AuthenticatedGoalsGoalIdRoute
   '/organizations/new': typeof AuthenticatedOrganizationsNewRoute
   '/settings/api-tokens': typeof AuthenticatedSettingsApiTokensRoute
@@ -167,6 +175,7 @@ export interface FileRoutesById {
   '/_authenticated/goals': typeof AuthenticatedGoalsRouteWithChildren
   '/_authenticated/home': typeof AuthenticatedHomeRoute
   '/_authenticated/labels': typeof AuthenticatedLabelsRoute
+  '/invitations/$token': typeof InvitationsTokenRoute
   '/_authenticated/goals/$goalId': typeof AuthenticatedGoalsGoalIdRoute
   '/_authenticated/organizations/new': typeof AuthenticatedOrganizationsNewRoute
   '/_authenticated/settings/api-tokens': typeof AuthenticatedSettingsApiTokensRoute
@@ -187,6 +196,7 @@ export interface FileRouteTypes {
     | '/goals'
     | '/home'
     | '/labels'
+    | '/invitations/$token'
     | '/goals/$goalId'
     | '/organizations/new'
     | '/settings/api-tokens'
@@ -205,6 +215,7 @@ export interface FileRouteTypes {
     | '/goals'
     | '/home'
     | '/labels'
+    | '/invitations/$token'
     | '/goals/$goalId'
     | '/organizations/new'
     | '/settings/api-tokens'
@@ -224,6 +235,7 @@ export interface FileRouteTypes {
     | '/_authenticated/goals'
     | '/_authenticated/home'
     | '/_authenticated/labels'
+    | '/invitations/$token'
     | '/_authenticated/goals/$goalId'
     | '/_authenticated/organizations/new'
     | '/_authenticated/settings/api-tokens'
@@ -240,6 +252,7 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   SignInRoute: typeof SignInRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
+  InvitationsTokenRoute: typeof InvitationsTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -299,6 +312,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/labels'
       preLoaderRoute: typeof AuthenticatedLabelsRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/invitations/$token': {
+      id: '/invitations/$token'
+      path: '/invitations/$token'
+      fullPath: '/invitations/$token'
+      preLoaderRoute: typeof InvitationsTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/goals/$goalId': {
       id: '/_authenticated/goals/$goalId'
@@ -417,6 +437,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   SignInRoute: SignInRoute,
   VerifyEmailRoute: VerifyEmailRoute,
+  InvitationsTokenRoute: InvitationsTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,3 +1,4 @@
+import { isEmailAddress } from "../email-address";
 import {
   type AuthBackend,
   type AuthSession,
@@ -20,7 +21,10 @@ export type TrustedProxyAssertion = {
   method: string;
   path: string;
   sessionId: string;
-  user: AuthUser;
+  // Required, but not narrowed to `true`: this describes what a proxy may put
+  // on the wire, and `false` is a legitimate thing to send. Refusing it is the
+  // validator's job, enforced at runtime in decodeAssertion.
+  user: AuthUser & { emailVerified: boolean };
 };
 
 export function createTrustedProxyAuthBackend(options: {
@@ -74,7 +78,18 @@ export function createTrustedProxyAuthBackend(options: {
       ) {
         return null;
       }
-      return { id: assertion.sessionId, user: assertion.user };
+      // Rebuild the canonical user rather than forwarding the decoded
+      // object. The assertion is a wire format the proxy controls, so
+      // anything it adds would otherwise reach the session response, whose
+      // AuthUser schema is closed.
+      return {
+        id: assertion.sessionId,
+        user: {
+          id: assertion.user.id,
+          displayName: assertion.user.displayName,
+          email: assertion.user.email
+        }
+      };
     },
 
     async beginLogin(input: AuthTransitionInput) {
@@ -178,7 +193,13 @@ function decodeAssertion(encoded: string): TrustedProxyAssertion | null {
     assertion.user.displayName.length > 100 ||
     typeof assertion.user.email !== "string" ||
     assertion.user.email !== assertion.user.email.toLowerCase() ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assertion.user.email)
+    !isEmailAddress(assertion.user.email) ||
+    // Authorization is keyed to the address, since organization invitations
+    // are claimed by it, so a proxy has to affirmatively claim it verified
+    // ownership. Requiring the field rather than tolerating its absence is
+    // what makes this fail closed: silence from a proxy that never checked
+    // is indistinguishable from one that did.
+    assertion.user.emailVerified !== true
   ) {
     return null;
   }

@@ -59,6 +59,26 @@ export const apiRoutes = {
     method: "PATCH",
     path: "/v1/organizations/current/members/{userId}"
   },
+  organizationInvitationsList: {
+    method: "GET",
+    path: "/v1/organizations/current/invitations"
+  },
+  organizationInvitationsCreate: {
+    method: "POST",
+    path: "/v1/organizations/current/invitations"
+  },
+  organizationInvitationRevoke: {
+    method: "DELETE",
+    path: "/v1/organizations/current/invitations/{invitationId}"
+  },
+  organizationInvitationResend: {
+    method: "POST",
+    path: "/v1/organizations/current/invitations/{invitationId}/resend"
+  },
+  organizationInvitationAccept: {
+    method: "POST",
+    path: "/v1/organizations/invitations/accept"
+  },
   apiTokensList: {
     method: "GET",
     path: "/v1/api-tokens"

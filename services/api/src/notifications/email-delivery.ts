@@ -56,7 +56,9 @@ function smtpClientOptions(
       password: decodeURIComponent(url.password),
       ssl: implicitTls ? { servername: url.hostname } : false,
       tls: !implicitTls,
-      timeout: 30_000
+      // Deliberately short: hosted deployments run the API as a single
+      // container instance, so a slow send blocks every other request.
+      timeout: 5_000
     };
   } catch {
     throw invalidSmtpUrl();
@@ -91,33 +93,67 @@ export class SmtpEmailDelivery implements EmailDelivery {
 }
 
 type EmailDeliveryEnvironment = {
+  EMAIL_DELIVERY?: string;
+  EMAIL_FROM?: string;
+  SMTP_URL?: string;
+  /** Deprecated aliases kept so existing deployments and .env files work. */
   AUTH_EMAIL_DELIVERY?: string;
   AUTH_EMAIL_FROM?: string;
   AUTH_SMTP_URL?: string;
   NODE_ENV?: string;
 };
 
+function settings(env: EmailDeliveryEnvironment) {
+  return {
+    mode: env.EMAIL_DELIVERY ?? env.AUTH_EMAIL_DELIVERY,
+    from: env.EMAIL_FROM ?? env.AUTH_EMAIL_FROM,
+    smtpUrl: env.SMTP_URL ?? env.AUTH_SMTP_URL,
+    production: env.NODE_ENV === "production"
+  };
+}
+
+/**
+ * Delivery for flows that cannot function without it — email-provider
+ * registration cannot verify an address it never sent to, so this throws
+ * rather than degrading.
+ */
 export function configuredEmailDelivery(
   env: EmailDeliveryEnvironment = process.env
 ): EmailDelivery {
-  const mode = env.AUTH_EMAIL_DELIVERY ?? "log";
+  const { mode = "log", from, smtpUrl, production } = settings(env);
 
   switch (mode) {
     case "log":
-      if (env.NODE_ENV === "production") {
+      if (production) {
         throw new Error(
-          "AUTH_EMAIL_DELIVERY=log is available only outside production"
+          "EMAIL_DELIVERY=log is available only outside production"
         );
       }
       return new LogEmailDelivery();
     case "smtp":
-      if (!env.AUTH_EMAIL_FROM || !env.AUTH_SMTP_URL) {
+      if (!from || !smtpUrl) {
         throw new Error(
-          "AUTH_EMAIL_FROM and AUTH_SMTP_URL are required for SMTP email delivery"
+          "EMAIL_FROM and SMTP_URL are required for SMTP email delivery"
         );
       }
-      return new SmtpEmailDelivery(env.AUTH_SMTP_URL, env.AUTH_EMAIL_FROM);
+      return new SmtpEmailDelivery(smtpUrl, from);
     default:
-      throw new Error("AUTH_EMAIL_DELIVERY must be one of: log, smtp");
+      throw new Error("EMAIL_DELIVERY must be one of: log, smtp");
   }
+}
+
+/**
+ * Delivery for notifications that degrade gracefully. Returns null when
+ * nothing is configured so the caller can fall back — an invitation still
+ * commits and surfaces a shareable link when no mailer exists.
+ */
+export function optionalNotificationDelivery(
+  env: EmailDeliveryEnvironment = process.env
+): EmailDelivery | null {
+  const { mode, from, smtpUrl, production } = settings(env);
+
+  if (!mode) return production ? null : new LogEmailDelivery();
+  if (mode === "log") return production ? null : new LogEmailDelivery();
+  if (mode === "smtp") return from && smtpUrl ? new SmtpEmailDelivery(smtpUrl, from) : null;
+  return null;
 }

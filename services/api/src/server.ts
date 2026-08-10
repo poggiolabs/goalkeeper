@@ -5,7 +5,10 @@ import {
   migrateApiDatabase
 } from "./api-tokens/postgres";
 import { createApiTokenService } from "./api-tokens/service";
-import { configuredEmailDelivery } from "./auth/email-delivery";
+import {
+  configuredEmailDelivery,
+  optionalNotificationDelivery
+} from "./notifications/email-delivery";
 import { createPostgresEmailAuthBackend } from "./auth/email";
 import { createTrustedProxyAuthBackend } from "./auth/trusted-proxy";
 import type { AuthBackend } from "./auth/types";
@@ -27,7 +30,14 @@ const apiTokens = createApiTokenService(
   createPostgresApiTokenRepository(database)
 );
 const organizations = createOrganizationService(
-  createPostgresOrganizationRepository(database)
+  createPostgresOrganizationRepository(database),
+  {
+    webOrigin,
+    // Null when no mailer is configured. Invitations still commit and return
+    // a shareable link, so a trusted-proxy deployment works before SMTP
+    // credentials exist.
+    emailDelivery: optionalNotificationDelivery()
+  }
 );
 const goals = createGoalService(createPostgresGoalRepository(database), {
   isOrganizationMember: async (userId, organizationId) =>

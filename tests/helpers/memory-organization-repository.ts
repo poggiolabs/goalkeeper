@@ -1,6 +1,9 @@
 import type { AuthUser } from "../../services/api/src/auth/types";
 import type {
+  AcceptedInvitation,
+  InvitationRejection,
   OrganizationContext,
+  OrganizationInvitation,
   OrganizationMember,
   OrganizationRepository,
   OrganizationRole,
@@ -9,10 +12,13 @@ import type {
 
 type StoredOrganization = Pick<OrganizationSummary, "id" | "name">;
 
+type StoredInvitation = OrganizationInvitation & { tokenHash: string };
+
 export class MemoryOrganizationRepository implements OrganizationRepository {
   readonly organizations = new Map<string, StoredOrganization>();
   readonly memberships = new Map<string, Map<string, OrganizationMember>>();
   readonly activeOrganizations = new Map<string, string>();
+  readonly invitations = new Map<string, StoredInvitation>();
 
   async ensureForUser(user: AuthUser): Promise<OrganizationContext> {
     let organizations = this.forUser(user.id);
@@ -100,6 +106,127 @@ export class MemoryOrganizationRepository implements OrganizationRepository {
     return this.memberships.get(organizationId)?.get(userId)?.role ?? null;
   }
 
+  async createInvitation(
+    actorUserId: string,
+    organizationId: string,
+    input: {
+      email: string;
+      role: Exclude<OrganizationRole, "owner">;
+      tokenHash: string;
+      expiresAt: Date;
+    }
+  ): Promise<OrganizationInvitation | null> {
+    if (!this.isAdministrator(actorUserId, organizationId)) return null;
+    for (const stored of this.invitations.values()) {
+      if (
+        stored.organizationId === organizationId &&
+        stored.email === input.email &&
+        stored.status === "pending"
+      ) {
+        if (stored.expiresAt.getTime() <= Date.now()) {
+          stored.status = "expired";
+        } else {
+          throw Object.assign(new Error("duplicate pending invitation"), {
+            code: "23505"
+          });
+        }
+      }
+    }
+    const invitation: StoredInvitation = {
+      id: crypto.randomUUID(),
+      organizationId,
+      email: input.email,
+      role: input.role,
+      status: "pending",
+      invitedByUserId: actorUserId,
+      expiresAt: input.expiresAt,
+      createdAt: new Date(),
+      tokenHash: input.tokenHash
+    };
+    this.invitations.set(invitation.id, invitation);
+    return toInvitation(invitation);
+  }
+
+  async listInvitations(
+    userId: string,
+    organizationId: string
+  ): Promise<OrganizationInvitation[] | null> {
+    if (!this.memberships.get(organizationId)?.has(userId)) return null;
+    return [...this.invitations.values()]
+      .filter(
+        (stored) =>
+          stored.organizationId === organizationId && stored.status === "pending"
+      )
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map(toInvitation);
+  }
+
+  async revokeInvitation(
+    actorUserId: string,
+    organizationId: string,
+    invitationId: string
+  ): Promise<boolean> {
+    const stored = this.invitations.get(invitationId);
+    if (
+      !stored ||
+      stored.organizationId !== organizationId ||
+      stored.status !== "pending" ||
+      !this.isAdministrator(actorUserId, organizationId)
+    ) {
+      return false;
+    }
+    stored.status = "revoked";
+    return true;
+  }
+
+  async resendInvitation(
+    actorUserId: string,
+    organizationId: string,
+    invitationId: string,
+    replacement: { tokenHash: string; expiresAt: Date }
+  ): Promise<OrganizationInvitation | null> {
+    const stored = this.invitations.get(invitationId);
+    if (
+      !stored ||
+      stored.organizationId !== organizationId ||
+      stored.status !== "pending" ||
+      !this.isAdministrator(actorUserId, organizationId)
+    ) {
+      return null;
+    }
+    stored.tokenHash = replacement.tokenHash;
+    stored.expiresAt = replacement.expiresAt;
+    return toInvitation(stored);
+  }
+
+  async acceptInvitation(
+    user: AuthUser,
+    tokenHash: string
+  ): Promise<AcceptedInvitation | InvitationRejection> {
+    const stored = [...this.invitations.values()].find(
+      (candidate) =>
+        candidate.tokenHash === tokenHash &&
+        candidate.status === "pending" &&
+        candidate.expiresAt.getTime() > Date.now()
+    );
+    if (!stored) return "invitation_not_found";
+    if (stored.email !== user.email.toLowerCase()) {
+      return "invitation_email_mismatch";
+    }
+    stored.status = "accepted";
+    const memberships = this.memberships.get(stored.organizationId) ?? new Map();
+    if (memberships.has(user.id)) return "invitation_already_member";
+    memberships.set(user.id, toMember(user, stored.role));
+    this.memberships.set(stored.organizationId, memberships);
+    this.activeOrganizations.set(user.id, stored.organizationId);
+    return { organizationId: stored.organizationId, role: stored.role };
+  }
+
+  private isAdministrator(userId: string, organizationId: string): boolean {
+    const role = this.memberships.get(organizationId)?.get(userId)?.role;
+    return role === "owner" || role === "admin";
+  }
+
   addMember(
     organizationId: string,
     user: AuthUser,
@@ -145,6 +272,11 @@ export class MemoryOrganizationRepository implements OrganizationRepository {
     }
     return result;
   }
+}
+
+function toInvitation(stored: StoredInvitation): OrganizationInvitation {
+  const { tokenHash: _tokenHash, ...invitation } = stored;
+  return invitation;
 }
 
 function toMember(user: AuthUser, role: OrganizationRole): OrganizationMember {

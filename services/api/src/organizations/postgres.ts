@@ -1,5 +1,9 @@
 import { SQL } from "bun";
 import type {
+  AcceptedInvitation,
+  InvitationRejection,
+  InvitationStatus,
+  OrganizationInvitation,
   OrganizationMember,
   OrganizationRepository,
   OrganizationRole,
@@ -10,6 +14,17 @@ type OrganizationRow = {
   id: string;
   name: string;
   role: OrganizationRole;
+};
+
+type OrganizationInvitationRow = {
+  id: string;
+  organization_id: string;
+  email: string;
+  role: Exclude<OrganizationRole, "owner">;
+  status: InvitationStatus;
+  invited_by_user_id: string;
+  expires_at: Date | string;
+  created_at: Date | string;
 };
 
 type OrganizationMemberRow = {
@@ -131,7 +146,201 @@ export function createPostgresOrganizationRepository(
           and user_id = ${userId}
       `;
       return row?.role ?? null;
+    },
+
+    async createInvitation(actorUserId, organizationId, input) {
+      return sql.begin(async (transaction) => {
+        if (!(await isAdministrator(transaction, actorUserId, organizationId))) {
+          return null;
+        }
+        // Close a lapsed invitation first: the pending unique index cannot
+        // exclude expired rows, so a stale one would block reinvitation.
+        await transaction`
+          update organization_invitations
+          set status = 'expired', updated_at = now()
+          where organization_id = ${organizationId}::uuid
+            and email = ${input.email}
+            and status = 'pending'
+            and expires_at <= now()
+        `;
+        const [row] = await transaction<OrganizationInvitationRow[]>`
+          insert into organization_invitations (
+            organization_id,
+            email,
+            role,
+            token_hash,
+            invited_by_user_id,
+            expires_at
+          ) values (
+            ${organizationId}::uuid,
+            ${input.email},
+            ${input.role},
+            ${input.tokenHash},
+            ${actorUserId},
+            ${input.expiresAt}
+          )
+          returning
+            id, organization_id, email, role, status,
+            invited_by_user_id, expires_at, created_at
+        `;
+        if (!row) throw new Error("Invitation insert did not return a record");
+        return toInvitation(row);
+      });
+    },
+
+    async listInvitations(userId, organizationId) {
+      if (!(await isMember(sql, userId, organizationId))) return null;
+      const rows = await sql<OrganizationInvitationRow[]>`
+        select
+          id, organization_id, email, role, status,
+          invited_by_user_id, expires_at, created_at
+        from organization_invitations
+        where organization_id = ${organizationId}::uuid
+          and status = 'pending'
+        order by created_at desc
+      `;
+      return rows.map(toInvitation);
+    },
+
+    async revokeInvitation(actorUserId, organizationId, invitationId) {
+      const rows = await sql<{ id: string }[]>`
+        update organization_invitations target
+        set status = 'revoked', revoked_at = now(), updated_at = now()
+        where target.id = ${invitationId}::uuid
+          and target.organization_id = ${organizationId}::uuid
+          and target.status = 'pending'
+          and exists (
+            select 1
+            from organization_memberships actor
+            where actor.organization_id = target.organization_id
+              and actor.user_id = ${actorUserId}
+              and actor.role in ('owner', 'admin')
+          )
+        returning target.id
+      `;
+      return rows.length === 1;
+    },
+
+    async resendInvitation(actorUserId, organizationId, invitationId, replacement) {
+      const rows = await sql<OrganizationInvitationRow[]>`
+        update organization_invitations target
+        set token_hash = ${replacement.tokenHash},
+            expires_at = ${replacement.expiresAt},
+            updated_at = now()
+        where target.id = ${invitationId}::uuid
+          and target.organization_id = ${organizationId}::uuid
+          and target.status = 'pending'
+          and exists (
+            select 1
+            from organization_memberships actor
+            where actor.organization_id = target.organization_id
+              and actor.user_id = ${actorUserId}
+              and actor.role in ('owner', 'admin')
+          )
+        returning
+          target.id, target.organization_id, target.email, target.role,
+          target.status, target.invited_by_user_id, target.expires_at,
+          target.created_at
+      `;
+      return rows[0] ? toInvitation(rows[0]) : null;
+    },
+
+    async acceptInvitation(user, tokenHash) {
+      return sql.begin(async (transaction) => {
+        const [invitation] = await transaction<
+          Array<{ organization_id: string; email: string; role: Exclude<OrganizationRole, "owner"> }>
+        >`
+          update organization_invitations
+          set status = 'accepted',
+              accepted_at = now(),
+              accepted_by_user_id = ${user.id},
+              updated_at = now()
+          where token_hash = ${tokenHash}
+            and status = 'pending'
+            and expires_at > now()
+          returning organization_id, email, role
+        `;
+        if (!invitation) return "invitation_not_found" satisfies InvitationRejection;
+
+        // The invitation names an address, not an identity. Only the verified
+        // holder of that address may consume it.
+        if (invitation.email !== user.email.toLowerCase()) {
+          throw new InvitationEmailMismatch();
+        }
+
+        const inserted = await transaction<{ organization_id: string }[]>`
+          insert into organization_memberships (
+            organization_id, user_id, role, display_name, email
+          ) values (
+            ${invitation.organization_id}::uuid,
+            ${user.id},
+            ${invitation.role},
+            ${user.displayName},
+            ${user.email}
+          )
+          on conflict (organization_id, user_id) do nothing
+          returning organization_id
+        `;
+        if (inserted.length === 0) {
+          // Already a member by another path; the invitation is still spent.
+          return "invitation_already_member" satisfies InvitationRejection;
+        }
+        await setActiveOrganization(transaction, user.id, invitation.organization_id);
+        return {
+          organizationId: invitation.organization_id,
+          role: invitation.role
+        } satisfies AcceptedInvitation;
+      }).catch((error: unknown) => {
+        if (error instanceof InvitationEmailMismatch) {
+          return "invitation_email_mismatch" satisfies InvitationRejection;
+        }
+        throw error;
+      });
     }
+  };
+}
+
+/** Rolls the accept transaction back so a mismatched token stays unspent. */
+class InvitationEmailMismatch extends Error {
+  constructor() {
+    super("Invitation email does not match the authenticated session");
+    this.name = "InvitationEmailMismatch";
+  }
+}
+
+async function isMember(sql: SQL, userId: string, organizationId: string) {
+  const [row] = await sql<{ allowed: boolean }[]>`
+    select exists (
+      select 1 from organization_memberships
+      where organization_id = ${organizationId}::uuid
+        and user_id = ${userId}
+    ) as allowed
+  `;
+  return row?.allowed === true;
+}
+
+async function isAdministrator(sql: SQL, userId: string, organizationId: string) {
+  const [row] = await sql<{ allowed: boolean }[]>`
+    select exists (
+      select 1 from organization_memberships
+      where organization_id = ${organizationId}::uuid
+        and user_id = ${userId}
+        and role in ('owner', 'admin')
+    ) as allowed
+  `;
+  return row?.allowed === true;
+}
+
+function toInvitation(row: OrganizationInvitationRow): OrganizationInvitation {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    email: row.email,
+    role: row.role,
+    status: row.status,
+    invitedByUserId: row.invited_by_user_id,
+    expiresAt: row.expires_at instanceof Date ? row.expires_at : new Date(row.expires_at),
+    createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at)
   };
 }
 

@@ -310,6 +310,109 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
     }
 
+    if (matches(request, apiRoutes.organizationInvitationsList)) {
+      const session = await dependencies.auth.getSession(request);
+      if (!session) {
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
+      }
+      try {
+        return sensitiveJson(
+          await dependencies.organizations.listInvitationsForUser(session.user),
+          200,
+          webOrigin
+        );
+      } catch (error) {
+        return organizationErrorResponse(error, webOrigin);
+      }
+    }
+
+    if (matches(request, apiRoutes.organizationInvitationsCreate)) {
+      if (!hasAllowedOrigin(request, webOrigin)) {
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+      }
+      const session = await dependencies.auth.getSession(request);
+      if (!session) {
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
+      }
+      try {
+        return sensitiveJson(
+          await dependencies.organizations.createInvitationForUser(
+            session.user,
+            await request.json()
+          ),
+          201,
+          webOrigin
+        );
+      } catch (error) {
+        return organizationErrorResponse(error, webOrigin);
+      }
+    }
+
+    const resendInvitationId = matchOrganizationInvitationResend(request);
+    if (resendInvitationId) {
+      if (!hasAllowedOrigin(request, webOrigin)) {
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+      }
+      const session = await dependencies.auth.getSession(request);
+      if (!session) {
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
+      }
+      try {
+        return sensitiveJson(
+          await dependencies.organizations.resendInvitationForUser(
+            session.user,
+            resendInvitationId
+          ),
+          200,
+          webOrigin
+        );
+      } catch (error) {
+        return organizationErrorResponse(error, webOrigin);
+      }
+    }
+
+    const revokeInvitationId = matchOrganizationInvitationRevoke(request);
+    if (revokeInvitationId) {
+      if (!hasAllowedOrigin(request, webOrigin)) {
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+      }
+      const session = await dependencies.auth.getSession(request);
+      if (!session) {
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
+      }
+      try {
+        await dependencies.organizations.revokeInvitationForUser(
+          session.user,
+          revokeInvitationId
+        );
+        return sensitiveEmpty(204, webOrigin);
+      } catch (error) {
+        return organizationErrorResponse(error, webOrigin);
+      }
+    }
+
+    if (matches(request, apiRoutes.organizationInvitationAccept)) {
+      if (!hasAllowedOrigin(request, webOrigin)) {
+        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+      }
+      const session = await dependencies.auth.getSession(request);
+      if (!session) {
+        return unauthorizedResponse(dependencies.auth, request, webOrigin);
+      }
+      try {
+        return sensitiveJson(
+          await dependencies.organizations.acceptInvitationForUser(
+            session.user,
+            await request.json()
+          ),
+          200,
+          webOrigin
+        );
+      } catch (error) {
+        return organizationErrorResponse(error, webOrigin);
+      }
+    }
+
     if (matches(request, apiRoutes.apiTokenScopes)) {
       return json(
         {
@@ -835,6 +938,22 @@ function matchOrganizationMemberUpdate(request: Request): string | null {
   } catch {
     return null;
   }
+}
+
+function matchOrganizationInvitationRevoke(request: Request): string | null {
+  if (request.method !== apiRoutes.organizationInvitationRevoke.method) return null;
+  const match = new URL(request.url).pathname.match(
+    /^\/v1\/organizations\/current\/invitations\/([^/]+)$/
+  );
+  return match?.[1] ?? null;
+}
+
+function matchOrganizationInvitationResend(request: Request): string | null {
+  if (request.method !== apiRoutes.organizationInvitationResend.method) return null;
+  const match = new URL(request.url).pathname.match(
+    /^\/v1\/organizations\/current\/invitations\/([^/]+)\/resend$/
+  );
+  return match?.[1] ?? null;
 }
 
 function matchResourceRoute(
