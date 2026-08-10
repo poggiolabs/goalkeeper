@@ -1,5 +1,6 @@
 import { hashToken } from "../api-tokens/service";
 import type { AuthUser } from "../auth/types";
+import { isEmailAddress } from "../email-address";
 import type { EmailDelivery } from "../notifications/email-delivery";
 import type {
   OrganizationInvitation,
@@ -9,7 +10,6 @@ import type {
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /**
  * Seven days, matching WorkOS's invitationExpiry so a deployment fronted by
  * AuthKit does not disagree with it about how long an invitation lives.
@@ -324,7 +324,7 @@ function normalizeInvitationRequest(request: unknown): {
   const candidate = request as { email?: unknown } | null;
   const email =
     typeof candidate?.email === "string" ? candidate.email.trim().toLowerCase() : "";
-  if (!email || email.length > 320 || !emailPattern.test(email)) {
+  if (!isEmailAddress(email)) {
     throw new OrganizationError(
       "invalid_invitation_email",
       "A valid email address is required"

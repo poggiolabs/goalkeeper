@@ -1,5 +1,6 @@
 import type { SQL } from "bun";
 import { hashToken } from "../api-tokens/service";
+import { isEmailAddress } from "../email-address";
 import type { EmailDelivery } from "../notifications/email-delivery";
 import {
   AuthError,
@@ -13,7 +14,9 @@ import {
 const cookieName = "goalkeeper_session";
 const sessionTtlMs = 30 * 86_400_000;
 const verificationTtlMs = 24 * 60 * 60_000;
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// RFC 5321 caps a forward path at 320, but this backend stores addresses it
+// must also be able to send to, so it keeps the stricter practical limit.
+const maximumStoredEmailLength = 254;
 
 type UserRow = {
   session_id: string;
@@ -341,7 +344,7 @@ function normalizeLogin(request: EmailLogin) {
 
 function normalizeEmail(value: string): string {
   const email = typeof value === "string" ? value.trim().toLowerCase() : "";
-  if (!email || email.length > 254 || !emailPattern.test(email)) {
+  if (!isEmailAddress(email, maximumStoredEmailLength)) {
     throw new AuthError("invalid_email", "A valid email is required");
   }
   return email;

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { SQL } from "bun";
 import { migrateApiDatabase } from "../services/api/src/api-tokens/postgres";
 import { hashToken } from "../services/api/src/api-tokens/service";
+import { isEmailAddress } from "../services/api/src/email-address";
 import type { EmailMessage } from "../services/api/src/notifications/email-delivery";
 import { createPostgresOrganizationRepository } from "../services/api/src/organizations/postgres";
 import {
@@ -376,6 +377,41 @@ describe.skipIf(!testDatabaseUrl)("PostgreSQL organization invitations", () => {
     expect(() =>
       createOrganizationService(repository, { invitationLifetimeMs: 0 })
     ).toThrow("invitationLifetimeMs must be a positive integer");
+  });
+
+  test("the check constraint agrees with the shared email pattern", async () => {
+    // The constraint is a deliberate second copy of emailAddressPattern, so
+    // the two can drift. This is what catches it if they do.
+    const owner = user("Ada Lovelace", "owner14@example.com");
+    const { activeOrganizationId } = await organizations.ensureForUser(owner);
+    const candidates = [
+      "ada@example.com",
+      "ada+invites@mail.example.co.uk",
+      "a@b.c",
+      "ada",
+      "ada@example",
+      "@example.com",
+      "ada @example.com"
+    ];
+
+    for (const [index, candidate] of candidates.entries()) {
+      const accepted = await database`
+        insert into organization_invitations (
+          organization_id, email, role, token_hash, invited_by_user_id, expires_at
+        ) values (
+          ${activeOrganizationId}::uuid, ${candidate}, 'member',
+          ${`${index}`.padStart(64, "0")}, ${owner.id}, now() + interval '7 days'
+        )
+        returning id
+      `
+        .then(() => true)
+        .catch(() => false);
+
+      expect({ candidate, accepted }).toEqual({
+        candidate,
+        accepted: isEmailAddress(candidate)
+      });
+    }
   });
 
   test("the plaintext token is never stored or listed", async () => {

@@ -1,3 +1,4 @@
+import { isEmailAddress } from "../email-address";
 import {
   type AuthBackend,
   type AuthSession,
@@ -178,7 +179,7 @@ function decodeAssertion(encoded: string): TrustedProxyAssertion | null {
     assertion.user.displayName.length > 100 ||
     typeof assertion.user.email !== "string" ||
     assertion.user.email !== assertion.user.email.toLowerCase() ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assertion.user.email) ||
+    !isEmailAddress(assertion.user.email) ||
     // Authorization is keyed to the address — organization invitations are
     // claimed by it — so a proxy that admits it has not verified ownership
     // must be refused. Absent stays acceptable for v1 proxies that predate

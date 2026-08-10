@@ -901,6 +901,9 @@ export async function migrateApiDatabase(sql: SQL): Promise<void> {
           updated_at timestamptz not null default now(),
           constraint organization_invitations_email_lowercase_check
             check (email = lower(email)),
+          -- Mirrors emailAddressPattern in src/email-address.ts. Kept as a
+          -- literal on purpose: an applied migration is a snapshot and must
+          -- not shift when that constant does.
           constraint organization_invitations_email_format_check
             check (email ~ '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$'),
           constraint organization_invitations_email_length_check
