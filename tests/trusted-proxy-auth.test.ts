@@ -32,7 +32,8 @@ function assertion(overrides: Partial<TrustedProxyAssertion> = {}) {
     user: {
       id: "external:user_01",
       displayName: "Ada Lovelace",
-      email: "ada@example.com"
+      email: "ada@example.com",
+      emailVerified: true
     },
     ...overrides
   } satisfies TrustedProxyAssertion;
@@ -113,38 +114,44 @@ describe("trusted proxy auth backend", () => {
     }))).toBeNull();
   });
 
-  test("refuses an assertion whose proxy admits the email is unverified", async () => {
-    // Invitations are claimed by email address, so an unverified address is
-    // an account-takeover vector. Absent remains acceptable for proxies that
-    // predate the field.
-    expect(
-      await backend().getSession(
-        await signedRequest(
-          assertion({
-            user: {
-              id: "external:user_01",
-              displayName: "Ada Lovelace",
-              email: "ada@example.com",
-              emailVerified: false
-            }
-          })
-        )
-      )
-    ).toBeNull();
+  test("requires the proxy to claim the email is verified", async () => {
+    const identity = {
+      id: "external:user_01",
+      displayName: "Ada Lovelace",
+      email: "ada@example.com"
+    };
 
-    const verified = await backend().getSession(
-      await signedRequest(
-        assertion({
-          user: {
-            id: "external:user_01",
-            displayName: "Ada Lovelace",
-            email: "ada@example.com",
-            emailVerified: true
-          }
-        })
-      )
-    );
-    expect(verified?.user.email).toBe("ada@example.com");
+    // A proxy saying so outright is within the contract and still refused.
+    expect(await backend().getSession(await signedRequest(assertion({
+      user: { ...identity, emailVerified: false }
+    })))).toBeNull();
+
+    // These sit outside the assertion type deliberately: the point is what
+    // happens when a proxy ignores the contract. Silence must fail closed
+    // exactly like denial, or a binding that never checked gets a session.
+    const nonconforming = [
+      identity,
+      { ...identity, emailVerified: "true" },
+      { ...identity, emailVerified: 1 },
+      { ...identity, emailVerified: null }
+    ] as TrustedProxyAssertion["user"][];
+
+    for (const user of nonconforming) {
+      expect(
+        await backend().getSession(await signedRequest(assertion({ user })))
+      ).toBeNull();
+    }
+  });
+
+  test("keeps wire-only assertion fields out of the canonical session", async () => {
+    // The published AuthUser schema is closed, so anything the proxy adds
+    // must stop at the boundary rather than reach /v1/auth/session.
+    const session = await backend().getSession(await signedRequest());
+    expect(session?.user).toEqual({
+      id: "external:user_01",
+      displayName: "Ada Lovelace",
+      email: "ada@example.com"
+    });
   });
 
   test("delegates login and logout to the managed auth surface", async () => {

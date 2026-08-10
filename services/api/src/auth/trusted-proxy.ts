@@ -21,7 +21,10 @@ export type TrustedProxyAssertion = {
   method: string;
   path: string;
   sessionId: string;
-  user: AuthUser & { emailVerified?: boolean };
+  // Required, but not narrowed to `true`: this describes what a proxy may put
+  // on the wire, and `false` is a legitimate thing to send. Refusing it is the
+  // validator's job, enforced at runtime in decodeAssertion.
+  user: AuthUser & { emailVerified: boolean };
 };
 
 export function createTrustedProxyAuthBackend(options: {
@@ -75,7 +78,18 @@ export function createTrustedProxyAuthBackend(options: {
       ) {
         return null;
       }
-      return { id: assertion.sessionId, user: assertion.user };
+      // Rebuild the canonical user rather than forwarding the decoded
+      // object. The assertion is a wire format the proxy controls, so
+      // anything it adds would otherwise reach the session response, whose
+      // AuthUser schema is closed.
+      return {
+        id: assertion.sessionId,
+        user: {
+          id: assertion.user.id,
+          displayName: assertion.user.displayName,
+          email: assertion.user.email
+        }
+      };
     },
 
     async beginLogin(input: AuthTransitionInput) {
@@ -180,11 +194,12 @@ function decodeAssertion(encoded: string): TrustedProxyAssertion | null {
     typeof assertion.user.email !== "string" ||
     assertion.user.email !== assertion.user.email.toLowerCase() ||
     !isEmailAddress(assertion.user.email) ||
-    // Authorization is keyed to the address — organization invitations are
-    // claimed by it — so a proxy that admits it has not verified ownership
-    // must be refused. Absent stays acceptable for v1 proxies that predate
-    // the field; see the capability note in the trusted-proxy docs.
-    ("emailVerified" in assertion.user && assertion.user.emailVerified !== true)
+    // Authorization is keyed to the address, since organization invitations
+    // are claimed by it, so a proxy has to affirmatively claim it verified
+    // ownership. Requiring the field rather than tolerating its absence is
+    // what makes this fail closed: silence from a proxy that never checked
+    // is indistinguishable from one that did.
+    assertion.user.emailVerified !== true
   ) {
     return null;
   }
