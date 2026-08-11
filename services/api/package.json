@@ -12,6 +12,7 @@
     "build": "bun build src/server.ts --target bun --outdir dist"
   },
   "dependencies": {
-    "emailjs": "^5.0.2"
+    "emailjs": "^5.0.2",
+    "hono": "^4.13.0"
   }
 }

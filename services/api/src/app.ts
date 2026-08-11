@@ -1,3 +1,4 @@
+import { Hono, type Context } from "hono";
 import {
   AuthError,
   isEmailAuthBackend,
@@ -27,711 +28,732 @@ export type ApiDependencies = {
   goals: GoalService;
   organizations: OrganizationService;
   webOrigin: string;
+  reportError?: (error: Error) => void;
 };
 
-export function createApiHandler(dependencies: ApiDependencies) {
+export function createApiApp(dependencies: ApiDependencies) {
+  const app = new Hono();
   const webOrigin = new URL(dependencies.webOrigin).origin;
 
-  return async function handleApiRequest(request: Request): Promise<Response> {
-    if (request.method === "OPTIONS") {
+  app.use("*", async (context, next) => {
+    if (context.req.method === "OPTIONS") {
       return responseWithCors(new Response(null, { status: 204 }), webOrigin);
     }
 
-    const url = new URL(request.url);
+    await next();
+    responseWithCors(context.res, webOrigin);
+  });
 
-    if (matches(request, apiRoutes.health)) {
-      return json({ service: "api", status: "ok" }, 200, webOrigin);
-    }
+  app.onError((error, context) => {
+    const noReferrer =
+      context.req.path === apiRoutes.authVerifyEmail.path ||
+      context.req.path === apiRoutes.authCallback.path;
+    const response = apiErrorResponse(error, webOrigin, noReferrer);
+    if (response) return response;
 
-    if (matches(request, apiRoutes.authSession)) {
-      const session = await dependencies.auth.getSession(request);
-      return session
-        ? sensitiveJson(
-            {
-              user: session.user,
-              ...(await dependencies.organizations.ensureForUser(session.user))
-            },
-            200,
-            webOrigin
-          )
-        : unauthorizedResponse(dependencies.auth, request, webOrigin);
-    }
+    (dependencies.reportError ?? defaultErrorReporter)(error);
+    return sensitiveJson({ error: "internal_error" }, 500, webOrigin);
+  });
 
-    if (matches(request, apiRoutes.authConfig)) {
-      return json({ method: dependencies.auth.method }, 200, webOrigin);
-    }
+  app.notFound(() => json({ error: "not_found" }, 404, webOrigin));
 
-    if (matches(request, apiRoutes.authLogin)) {
-      const transition = await dependencies.auth.beginLogin({
-        request,
-        returnTo: safeReturnTo(url.searchParams.get("returnTo"), webOrigin)
-      });
-      return sensitiveRedirect(transition, webOrigin);
-    }
+  app.get(honoPath(apiRoutes.health.path), () =>
+    json({ service: "api", status: "ok" }, 200, webOrigin)
+  );
 
-    if (matches(request, apiRoutes.authEmailLogin)) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
-      if (!isEmailAuthBackend(dependencies.auth)) {
-        return sensitiveJson({ error: "not_found" }, 404, webOrigin);
-      }
-      try {
-        const body = (await request.json()) as {
-          email?: unknown;
-          password?: unknown;
-          returnTo?: unknown;
-        };
-        const transition = await dependencies.auth.login({
-          email: typeof body.email === "string" ? body.email : "",
-          password: typeof body.password === "string" ? body.password : "",
-          returnTo: safeReturnTo(
-            typeof body.returnTo === "string" ? body.returnTo : null,
-            webOrigin
-          )
-        });
-        return sensitiveJson(
-          { redirectTo: transition.redirectTo },
+  app.get(honoPath(apiRoutes.authSession.path), async (context) => {
+    const request = context.req.raw;
+    const session = await dependencies.auth.getSession(request);
+    return session
+      ? sensitiveJson(
+          {
+            user: session.user,
+            ...(await dependencies.organizations.ensureForUser(session.user))
+          },
           200,
-          webOrigin,
-          transition.headers
-        );
-      } catch (error) {
-        return authErrorResponse(error, webOrigin);
-      }
-    }
-
-    if (matches(request, apiRoutes.authRegister)) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
-      if (!isEmailAuthBackend(dependencies.auth)) {
-        return sensitiveJson({ error: "not_found" }, 404, webOrigin);
-      }
-      try {
-        const body = (await request.json()) as {
-          email?: unknown;
-          password?: unknown;
-          displayName?: unknown;
-        };
-        return sensitiveJson(
-          await dependencies.auth.register({
-            email: typeof body.email === "string" ? body.email : "",
-            password: typeof body.password === "string" ? body.password : "",
-            displayName:
-              typeof body.displayName === "string" ? body.displayName : ""
-          }),
-          202,
           webOrigin
-        );
-      } catch (error) {
-        return authErrorResponse(error, webOrigin);
-      }
+        )
+      : unauthorizedResponse(dependencies.auth, request, webOrigin);
+  });
+
+  app.get(honoPath(apiRoutes.authConfig.path), () =>
+    json({ method: dependencies.auth.method }, 200, webOrigin)
+  );
+
+  app.get(honoPath(apiRoutes.authLogin.path), async (context) => {
+    const request = context.req.raw;
+    const transition = await dependencies.auth.beginLogin({
+      request,
+      returnTo: safeReturnTo(
+        new URL(request.url).searchParams.get("returnTo"),
+        webOrigin
+      )
+    });
+    return sensitiveRedirect(transition, webOrigin);
+  });
+
+  app.post(honoPath(apiRoutes.authEmailLogin.path), async (context) => {
+    const request = context.req.raw;
+    if (!hasAllowedOrigin(request, webOrigin)) {
+      return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+    }
+    if (!isEmailAuthBackend(dependencies.auth)) {
+      return sensitiveJson({ error: "not_found" }, 404, webOrigin);
     }
 
-    if (matches(request, apiRoutes.authVerifyEmail)) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson(
-          { error: "forbidden" },
-          403,
-          webOrigin,
-          undefined,
-          true
-        );
-      }
-      if (!isEmailAuthBackend(dependencies.auth)) {
-        return sensitiveJson(
-          { error: "not_found" },
-          404,
-          webOrigin,
-          undefined,
-          true
-        );
-      }
-      try {
-        const body = (await request.json()) as { token?: unknown };
-        const transition = await dependencies.auth.verifyEmail({
-          token: typeof body.token === "string" ? body.token : "",
-          returnTo: new URL("/sign-in", webOrigin).toString()
-        });
-        return sensitiveJson(
-          { redirectTo: transition.redirectTo },
-          200,
-          webOrigin,
-          transition.headers,
-          true
-        );
-      } catch (error) {
-        return authErrorResponse(error, webOrigin, true);
-      }
+    const body = (await request.json()) as {
+      email?: unknown;
+      password?: unknown;
+      returnTo?: unknown;
+    };
+    const transition = await dependencies.auth.login({
+      email: typeof body.email === "string" ? body.email : "",
+      password: typeof body.password === "string" ? body.password : "",
+      returnTo: safeReturnTo(
+        typeof body.returnTo === "string" ? body.returnTo : null,
+        webOrigin
+      )
+    });
+    return sensitiveJson(
+      { redirectTo: transition.redirectTo },
+      200,
+      webOrigin,
+      transition.headers
+    );
+  });
+
+  app.post(honoPath(apiRoutes.authRegister.path), async (context) => {
+    const request = context.req.raw;
+    if (!hasAllowedOrigin(request, webOrigin)) {
+      return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+    }
+    if (!isEmailAuthBackend(dependencies.auth)) {
+      return sensitiveJson({ error: "not_found" }, 404, webOrigin);
     }
 
-    if (matches(request, apiRoutes.authCallback)) {
-      try {
-        const transition = await dependencies.auth.completeLogin({
-          request,
-          returnTo: safeReturnTo(url.searchParams.get("returnTo"), webOrigin)
-        });
-        return sensitiveRedirect(transition, webOrigin, true);
-      } catch (error) {
-        return authErrorResponse(error, webOrigin, true);
-      }
-    }
+    const body = (await request.json()) as {
+      email?: unknown;
+      password?: unknown;
+      displayName?: unknown;
+    };
+    return sensitiveJson(
+      await dependencies.auth.register({
+        email: typeof body.email === "string" ? body.email : "",
+        password: typeof body.password === "string" ? body.password : "",
+        displayName: typeof body.displayName === "string" ? body.displayName : ""
+      }),
+      202,
+      webOrigin
+    );
+  });
 
-    if (matches(request, apiRoutes.authLogout)) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
-
-      const transition = await dependencies.auth.logout(request);
+  app.post(honoPath(apiRoutes.authVerifyEmail.path), async (context) => {
+    const request = context.req.raw;
+    if (!hasAllowedOrigin(request, webOrigin)) {
       return sensitiveJson(
-        { redirectTo: transition.redirectTo },
-        200,
+        { error: "forbidden" },
+        403,
         webOrigin,
-        transition.headers
+        undefined,
+        true
       );
     }
-
-    if (matches(request, apiRoutes.organizationsList)) {
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
+    if (!isEmailAuthBackend(dependencies.auth)) {
       return sensitiveJson(
-        await dependencies.organizations.ensureForUser(session.user),
-        200,
-        webOrigin
+        { error: "not_found" },
+        404,
+        webOrigin,
+        undefined,
+        true
       );
     }
 
-    if (matches(request, apiRoutes.organizationsCreate)) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
-      try {
-        return sensitiveJson(
-          await dependencies.organizations.createForUser(
-            session.user,
-            await request.json()
-          ),
-          201,
-          webOrigin
-        );
-      } catch (error) {
-        return organizationErrorResponse(error, webOrigin);
-      }
-    }
+    const body = (await request.json()) as { token?: unknown };
+    const transition = await dependencies.auth.verifyEmail({
+      token: typeof body.token === "string" ? body.token : "",
+      returnTo: new URL("/sign-in", webOrigin).toString()
+    });
+    return sensitiveJson(
+      { redirectTo: transition.redirectTo },
+      200,
+      webOrigin,
+      transition.headers,
+      true
+    );
+  });
 
-    if (matches(request, apiRoutes.organizationsSwitch)) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
-      try {
-        return sensitiveJson(
-          await dependencies.organizations.switchForUser(
-            session.user,
-            await request.json()
-          ),
-          200,
-          webOrigin
-        );
-      } catch (error) {
-        return organizationErrorResponse(error, webOrigin);
-      }
-    }
-
-    if (matches(request, apiRoutes.organizationUpdate)) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
-      try {
-        return sensitiveJson(
-          await dependencies.organizations.updateActiveForUser(
-            session.user,
-            await request.json()
-          ),
-          200,
-          webOrigin
-        );
-      } catch (error) {
-        return organizationErrorResponse(error, webOrigin);
-      }
-    }
-
-    if (matches(request, apiRoutes.organizationMembersList)) {
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
-      try {
-        return sensitiveJson(
-          await dependencies.organizations.listActiveMembersForUser(session.user),
-          200,
-          webOrigin
-        );
-      } catch (error) {
-        return organizationErrorResponse(error, webOrigin);
-      }
-    }
-
-    const memberUserId = matchOrganizationMemberUpdate(request);
-    if (memberUserId) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
-      try {
-        return sensitiveJson(
-          await dependencies.organizations.updateActiveMemberRoleForUser(
-            session.user,
-            memberUserId,
-            await request.json()
-          ),
-          200,
-          webOrigin
-        );
-      } catch (error) {
-        return organizationErrorResponse(error, webOrigin);
-      }
-    }
-
-    if (matches(request, apiRoutes.organizationInvitationsList)) {
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
-      try {
-        return sensitiveJson(
-          await dependencies.organizations.listInvitationsForUser(session.user),
-          200,
-          webOrigin
-        );
-      } catch (error) {
-        return organizationErrorResponse(error, webOrigin);
-      }
-    }
-
-    if (matches(request, apiRoutes.organizationInvitationsCreate)) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
-      try {
-        return sensitiveJson(
-          await dependencies.organizations.createInvitationForUser(
-            session.user,
-            await request.json()
-          ),
-          201,
-          webOrigin
-        );
-      } catch (error) {
-        return organizationErrorResponse(error, webOrigin);
-      }
-    }
-
-    const resendInvitationId = matchOrganizationInvitationResend(request);
-    if (resendInvitationId) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
-      try {
-        return sensitiveJson(
-          await dependencies.organizations.resendInvitationForUser(
-            session.user,
-            resendInvitationId
-          ),
-          200,
-          webOrigin
-        );
-      } catch (error) {
-        return organizationErrorResponse(error, webOrigin);
-      }
-    }
-
-    const revokeInvitationId = matchOrganizationInvitationRevoke(request);
-    if (revokeInvitationId) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
-      try {
-        await dependencies.organizations.revokeInvitationForUser(
-          session.user,
-          revokeInvitationId
-        );
-        return sensitiveEmpty(204, webOrigin);
-      } catch (error) {
-        return organizationErrorResponse(error, webOrigin);
-      }
-    }
-
-    if (matches(request, apiRoutes.organizationInvitationAccept)) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
-      try {
-        return sensitiveJson(
-          await dependencies.organizations.acceptInvitationForUser(
-            session.user,
-            await request.json()
-          ),
-          200,
-          webOrigin
-        );
-      } catch (error) {
-        return organizationErrorResponse(error, webOrigin);
-      }
-    }
-
-    if (matches(request, apiRoutes.apiTokenScopes)) {
-      return json(
-        {
-          scopes: apiTokenScopeRegistry.map(
-            ({ id, label, description, default: isDefault }) => ({
-              id,
-              label,
-              description,
-              default: isDefault
-            })
-          )
-        },
-        200,
+  app.get(honoPath(apiRoutes.authCallback.path), async (context) => {
+    const request = context.req.raw;
+    const transition = await dependencies.auth.completeLogin({
+      request,
+      returnTo: safeReturnTo(
+        new URL(request.url).searchParams.get("returnTo"),
         webOrigin
-      );
+      )
+    });
+    return sensitiveRedirect(transition, webOrigin, true);
+  });
+
+  app.post(honoPath(apiRoutes.authLogout.path), async (context) => {
+    const request = context.req.raw;
+    if (!hasAllowedOrigin(request, webOrigin)) {
+      return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
     }
 
-    if (matches(request, apiRoutes.apiTokensList)) {
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
+    const transition = await dependencies.auth.logout(request);
+    return sensitiveJson(
+      { redirectTo: transition.redirectTo },
+      200,
+      webOrigin,
+      transition.headers
+    );
+  });
 
-      const organizationContext =
-        await dependencies.organizations.ensureForUser(session.user);
+  app.get(honoPath(apiRoutes.organizationsList.path), async (context) => {
+    const request = context.req.raw;
+    const session = await dependencies.auth.getSession(request);
+    if (!session) {
+      return unauthorizedResponse(dependencies.auth, request, webOrigin);
+    }
+    return sensitiveJson(
+      await dependencies.organizations.ensureForUser(session.user),
+      200,
+      webOrigin
+    );
+  });
+
+  app.post(honoPath(apiRoutes.organizationsCreate.path), async (context) => {
+    const request = context.req.raw;
+    const guard = await requireSessionMutation(request, dependencies, webOrigin);
+    if (guard instanceof Response) return guard;
+
+    return sensitiveJson(
+      await dependencies.organizations.createForUser(
+        guard.user,
+        await request.json()
+      ),
+      201,
+      webOrigin
+    );
+  });
+
+  app.post(honoPath(apiRoutes.organizationsSwitch.path), async (context) => {
+    const request = context.req.raw;
+    const guard = await requireSessionMutation(request, dependencies, webOrigin);
+    if (guard instanceof Response) return guard;
+
+    return sensitiveJson(
+      await dependencies.organizations.switchForUser(
+        guard.user,
+        await request.json()
+      ),
+      200,
+      webOrigin
+    );
+  });
+
+  app.patch(honoPath(apiRoutes.organizationUpdate.path), async (context) => {
+    const request = context.req.raw;
+    const guard = await requireSessionMutation(request, dependencies, webOrigin);
+    if (guard instanceof Response) return guard;
+
+    return sensitiveJson(
+      await dependencies.organizations.updateActiveForUser(
+        guard.user,
+        await request.json()
+      ),
+      200,
+      webOrigin
+    );
+  });
+
+  app.get(honoPath(apiRoutes.organizationMembersList.path), async (context) => {
+    const request = context.req.raw;
+    const session = await dependencies.auth.getSession(request);
+    if (!session) {
+      return unauthorizedResponse(dependencies.auth, request, webOrigin);
+    }
+    return sensitiveJson(
+      await dependencies.organizations.listActiveMembersForUser(session.user),
+      200,
+      webOrigin
+    );
+  });
+
+  app.patch(
+    honoPath(apiRoutes.organizationMemberUpdate.path),
+    async (context) => {
+      const request = context.req.raw;
+      const guard = await requireSessionMutation(request, dependencies, webOrigin);
+      if (guard instanceof Response) return guard;
+
       return sensitiveJson(
-        await dependencies.apiTokens.list(
-          session.user.id,
-          organizationContext.activeOrganizationId
+        await dependencies.organizations.updateActiveMemberRoleForUser(
+          guard.user,
+          requiredParam(context, "userId"),
+          await request.json()
         ),
         200,
         webOrigin
       );
     }
+  );
 
-    if (matches(request, apiRoutes.apiTokensCreate)) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
+  app.get(
+    honoPath(apiRoutes.organizationInvitationsList.path),
+    async (context) => {
+      const request = context.req.raw;
       const session = await dependencies.auth.getSession(request);
       if (!session) {
         return unauthorizedResponse(dependencies.auth, request, webOrigin);
       }
 
-      try {
-        const organizationContext =
-          await dependencies.organizations.ensureForUser(session.user);
-        const body = await request.json();
-        return sensitiveJson(
-          await dependencies.apiTokens.create(
-            session.user.id,
-            organizationContext.activeOrganizationId,
-            body
-          ),
-          201,
-          webOrigin
-        );
-      } catch (error) {
-        return apiTokenErrorResponse(error, webOrigin);
-      }
+      return sensitiveJson(
+        await dependencies.organizations.listInvitationsForUser(session.user),
+        200,
+        webOrigin
+      );
+    }
+  );
+
+  app.post(
+    honoPath(apiRoutes.organizationInvitationsCreate.path),
+    async (context) => {
+      const request = context.req.raw;
+      const guard = await requireSessionMutation(request, dependencies, webOrigin);
+      if (guard instanceof Response) return guard;
+
+      return sensitiveJson(
+        await dependencies.organizations.createInvitationForUser(
+          guard.user,
+          await request.json()
+        ),
+        201,
+        webOrigin
+      );
+    }
+  );
+
+  app.post(
+    honoPath(apiRoutes.organizationInvitationResend.path),
+    async (context) => {
+      const request = context.req.raw;
+      const guard = await requireSessionMutation(request, dependencies, webOrigin);
+      if (guard instanceof Response) return guard;
+
+      return sensitiveJson(
+        await dependencies.organizations.resendInvitationForUser(
+          guard.user,
+          requiredParam(context, "invitationId")
+        ),
+        200,
+        webOrigin
+      );
+    }
+  );
+
+  app.delete(
+    honoPath(apiRoutes.organizationInvitationRevoke.path),
+    async (context) => {
+      const request = context.req.raw;
+      const guard = await requireSessionMutation(request, dependencies, webOrigin);
+      if (guard instanceof Response) return guard;
+
+      await dependencies.organizations.revokeInvitationForUser(
+        guard.user,
+        requiredParam(context, "invitationId")
+      );
+      return sensitiveEmpty(204, webOrigin);
+    }
+  );
+
+  app.post(
+    honoPath(apiRoutes.organizationInvitationAccept.path),
+    async (context) => {
+      const request = context.req.raw;
+      const guard = await requireSessionMutation(request, dependencies, webOrigin);
+      if (guard instanceof Response) return guard;
+
+      return sensitiveJson(
+        await dependencies.organizations.acceptInvitationForUser(
+          guard.user,
+          await request.json()
+        ),
+        200,
+        webOrigin
+      );
+    }
+  );
+
+  app.get(honoPath(apiRoutes.apiTokenScopes.path), () =>
+    json(
+      {
+        scopes: apiTokenScopeRegistry.map(
+          ({ id, label, description, default: isDefault }) => ({
+            id,
+            label,
+            description,
+            default: isDefault
+          })
+        )
+      },
+      200,
+      webOrigin
+    )
+  );
+
+  app.get(honoPath(apiRoutes.apiTokensList.path), async (context) => {
+    const request = context.req.raw;
+    const session = await dependencies.auth.getSession(request);
+    if (!session) {
+      return unauthorizedResponse(dependencies.auth, request, webOrigin);
     }
 
-    const revokedTokenId = matchApiTokenRevoke(request);
-    if (revokedTokenId) {
-      if (!hasAllowedOrigin(request, webOrigin)) {
-        return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-      }
-      const session = await dependencies.auth.getSession(request);
-      if (!session) {
-        return unauthorizedResponse(dependencies.auth, request, webOrigin);
-      }
+    const organizationContext =
+      await dependencies.organizations.ensureForUser(session.user);
+    return sensitiveJson(
+      await dependencies.apiTokens.list(
+        session.user.id,
+        organizationContext.activeOrganizationId
+      ),
+      200,
+      webOrigin
+    );
+  });
 
-      try {
-        const organizationContext =
-          await dependencies.organizations.ensureForUser(session.user);
-        return sensitiveJson(
-          await dependencies.apiTokens.revoke(
-            session.user.id,
-            organizationContext.activeOrganizationId,
-            revokedTokenId
-          ),
-          200,
-          webOrigin
-        );
-      } catch (error) {
-        return apiTokenErrorResponse(error, webOrigin);
-      }
-    }
+  app.post(honoPath(apiRoutes.apiTokensCreate.path), async (context) => {
+    const request = context.req.raw;
+    const guard = await requireSessionMutation(request, dependencies, webOrigin);
+    if (guard instanceof Response) return guard;
 
-    if (matches(request, apiRoutes.goalsList)) {
-      try {
-        const resolved = await resolveGoalAccess(
-          request,
-          dependencies,
-          "goals",
-          "read"
-        );
-        if (!resolved) {
-          return unauthorizedResponse(dependencies.auth, request, webOrigin);
-        }
-        return sensitiveJson(
-          await dependencies.goals.listGoals(resolved.access, url.searchParams),
-          200,
-          webOrigin
-        );
-      } catch (error) {
-        return goalRouteErrorResponse(error, webOrigin);
-      }
-    }
+    const organizationContext =
+      await dependencies.organizations.ensureForUser(guard.user);
+    return sensitiveJson(
+      await dependencies.apiTokens.create(
+        guard.user.id,
+        organizationContext.activeOrganizationId,
+        await request.json()
+      ),
+      201,
+      webOrigin
+    );
+  });
 
-    if (matches(request, apiRoutes.goalsCreate)) {
-      try {
-        const resolved = await resolveGoalAccess(
-          request,
-          dependencies,
-          "goals",
-          "write"
-        );
-        if (!resolved) {
-          return unauthorizedResponse(dependencies.auth, request, webOrigin);
-        }
-        if (resolved.session && !hasAllowedOrigin(request, webOrigin)) {
-          return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-        }
-        return sensitiveJson(
-          await dependencies.goals.createGoal(resolved.access, await request.json()),
-          201,
-          webOrigin
-        );
-      } catch (error) {
-        return goalRouteErrorResponse(error, webOrigin);
-      }
-    }
+  app.delete(honoPath(apiRoutes.apiTokenRevoke.path), async (context) => {
+    const request = context.req.raw;
+    const guard = await requireSessionMutation(request, dependencies, webOrigin);
+    if (guard instanceof Response) return guard;
 
-    if (matches(request, apiRoutes.goalLabelsList)) {
-      try {
-        const resolved = await resolveGoalAccess(
-          request,
-          dependencies,
-          "labels",
-          "read"
-        );
-        if (!resolved) {
-          return unauthorizedResponse(dependencies.auth, request, webOrigin);
-        }
-        return sensitiveJson(
-          await dependencies.goals.listLabels(resolved.access),
-          200,
-          webOrigin
-        );
-      } catch (error) {
-        return goalRouteErrorResponse(error, webOrigin);
-      }
-    }
+    const organizationContext =
+      await dependencies.organizations.ensureForUser(guard.user);
+    return sensitiveJson(
+      await dependencies.apiTokens.revoke(
+        guard.user.id,
+        organizationContext.activeOrganizationId,
+        requiredParam(context, "tokenId")
+      ),
+      200,
+      webOrigin
+    );
+  });
 
-    if (matches(request, apiRoutes.goalLabelsCreate)) {
-      try {
-        const resolved = await resolveGoalAccess(
-          request,
-          dependencies,
-          "labels",
-          "write"
-        );
-        if (!resolved) {
-          return unauthorizedResponse(dependencies.auth, request, webOrigin);
-        }
-        if (resolved.session && !hasAllowedOrigin(request, webOrigin)) {
-          return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-        }
-        return sensitiveJson(
-          await dependencies.goals.createLabel(resolved.access, await request.json()),
-          201,
-          webOrigin
-        );
-      } catch (error) {
-        return goalRouteErrorResponse(error, webOrigin);
-      }
-    }
+  app.get(honoPath(apiRoutes.goalsList.path), async (context) => {
+    const request = context.req.raw;
+    const resolved = await requireGoalAccess(
+      request,
+      dependencies,
+      webOrigin,
+      "goals",
+      "read"
+    );
+    if (resolved instanceof Response) return resolved;
 
-    const goalUpdatesMatch = matchGoalUpdatesRoute(request);
-    if (goalUpdatesMatch) {
-      const operation = request.method === "GET" ? "read" : "write";
-      try {
-        const resolved = await resolveGoalAccess(
-          request,
-          dependencies,
-          "goals",
-          operation
-        );
-        if (!resolved) {
-          return unauthorizedResponse(dependencies.auth, request, webOrigin);
-        }
-        if (
-          operation === "write" &&
-          resolved.session &&
-          !hasAllowedOrigin(request, webOrigin)
-        ) {
-          return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-        }
-        if (request.method === "GET") {
-          return sensitiveJson(
-            await dependencies.goals.listUpdates(
-              resolved.access,
-              goalUpdatesMatch
-            ),
-            200,
-            webOrigin
-          );
-        }
-        return sensitiveJson(
-          await dependencies.goals.reportUpdate(
-            resolved.access,
-            goalUpdatesMatch,
-            await request.json()
-          ),
-          201,
-          webOrigin
-        );
-      } catch (error) {
-        return goalRouteErrorResponse(error, webOrigin);
-      }
-    }
+    return sensitiveJson(
+      await dependencies.goals.listGoals(
+        resolved.access,
+        new URL(request.url).searchParams
+      ),
+      200,
+      webOrigin
+    );
+  });
 
-    const goalMatch = matchResourceRoute(request, "/v1/goals/", [
-      "GET",
-      "PATCH",
-      "DELETE"
-    ]);
-    if (goalMatch) {
-      const operation = request.method === "GET" ? "read" : "write";
-      try {
-        const resolved = await resolveGoalAccess(
-          request,
-          dependencies,
-          "goals",
-          operation
-        );
-        if (!resolved) {
-          return unauthorizedResponse(dependencies.auth, request, webOrigin);
-        }
-        if (
-          operation === "write" &&
-          resolved.session &&
-          !hasAllowedOrigin(request, webOrigin)
-        ) {
-          return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-        }
-        if (request.method === "GET") {
-          return sensitiveJson(
-            await dependencies.goals.getGoal(resolved.access, goalMatch),
-            200,
-            webOrigin
-          );
-        }
-        if (request.method === "PATCH") {
-          return sensitiveJson(
-            await dependencies.goals.updateGoal(
-              resolved.access,
-              goalMatch,
-              await request.json()
-            ),
-            200,
-            webOrigin
-          );
-        }
-        await dependencies.goals.deleteGoal(resolved.access, goalMatch);
-        return sensitiveEmpty(204, webOrigin);
-      } catch (error) {
-        return goalRouteErrorResponse(error, webOrigin);
-      }
-    }
+  app.post(honoPath(apiRoutes.goalsCreate.path), async (context) => {
+    const request = context.req.raw;
+    const resolved = await requireGoalAccess(
+      request,
+      dependencies,
+      webOrigin,
+      "goals",
+      "write"
+    );
+    if (resolved instanceof Response) return resolved;
+    const forbidden = sessionMutationForbidden(resolved, request, webOrigin);
+    if (forbidden) return forbidden;
 
-    const labelMatch = matchResourceRoute(request, "/v1/goal-labels/");
-    if (labelMatch) {
-      const operation = request.method === "GET" ? "read" : "write";
-      try {
-        const resolved = await resolveGoalAccess(
-          request,
-          dependencies,
-          "labels",
-          operation
-        );
-        if (!resolved) {
-          return unauthorizedResponse(dependencies.auth, request, webOrigin);
-        }
-        if (
-          operation === "write" &&
-          resolved.session &&
-          !hasAllowedOrigin(request, webOrigin)
-        ) {
-          return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
-        }
-        if (request.method === "GET") {
-          return sensitiveJson(
-            await dependencies.goals.getLabel(resolved.access, labelMatch),
-            200,
-            webOrigin
-          );
-        }
-        if (request.method === "PATCH") {
-          return sensitiveJson(
-            await dependencies.goals.updateLabel(
-              resolved.access,
-              labelMatch,
-              await request.json()
-            ),
-            200,
-            webOrigin
-          );
-        }
-        await dependencies.goals.deleteLabel(resolved.access, labelMatch);
-        return sensitiveEmpty(204, webOrigin);
-      } catch (error) {
-        return goalRouteErrorResponse(error, webOrigin);
-      }
-    }
+    return sensitiveJson(
+      await dependencies.goals.createGoal(resolved.access, await request.json()),
+      201,
+      webOrigin
+    );
+  });
 
-    return json({ error: "not_found" }, 404, webOrigin);
-  };
+  app.get(honoPath(apiRoutes.goalLabelsList.path), async (context) => {
+    const request = context.req.raw;
+    const resolved = await requireGoalAccess(
+      request,
+      dependencies,
+      webOrigin,
+      "labels",
+      "read"
+    );
+    if (resolved instanceof Response) return resolved;
+
+    return sensitiveJson(
+      await dependencies.goals.listLabels(resolved.access),
+      200,
+      webOrigin
+    );
+  });
+
+  app.post(honoPath(apiRoutes.goalLabelsCreate.path), async (context) => {
+    const request = context.req.raw;
+    const resolved = await requireGoalAccess(
+      request,
+      dependencies,
+      webOrigin,
+      "labels",
+      "write"
+    );
+    if (resolved instanceof Response) return resolved;
+    const forbidden = sessionMutationForbidden(resolved, request, webOrigin);
+    if (forbidden) return forbidden;
+
+    return sensitiveJson(
+      await dependencies.goals.createLabel(resolved.access, await request.json()),
+      201,
+      webOrigin
+    );
+  });
+
+  app.get(honoPath(apiRoutes.goalUpdatesList.path), async (context) => {
+    const request = context.req.raw;
+    const resolved = await requireGoalAccess(
+      request,
+      dependencies,
+      webOrigin,
+      "goals",
+      "read"
+    );
+    if (resolved instanceof Response) return resolved;
+
+    return sensitiveJson(
+      await dependencies.goals.listUpdates(
+        resolved.access,
+        requiredParam(context, "goalId")
+      ),
+      200,
+      webOrigin
+    );
+  });
+
+  app.post(honoPath(apiRoutes.goalUpdatesCreate.path), async (context) => {
+    const request = context.req.raw;
+    const resolved = await requireGoalAccess(
+      request,
+      dependencies,
+      webOrigin,
+      "goals",
+      "write"
+    );
+    if (resolved instanceof Response) return resolved;
+    const forbidden = sessionMutationForbidden(resolved, request, webOrigin);
+    if (forbidden) return forbidden;
+
+    return sensitiveJson(
+      await dependencies.goals.reportUpdate(
+        resolved.access,
+        requiredParam(context, "goalId"),
+        await request.json()
+      ),
+      201,
+      webOrigin
+    );
+  });
+
+  app.get(honoPath(apiRoutes.goalGet.path), async (context) => {
+    const request = context.req.raw;
+    const resolved = await requireGoalAccess(
+      request,
+      dependencies,
+      webOrigin,
+      "goals",
+      "read"
+    );
+    if (resolved instanceof Response) return resolved;
+
+    return sensitiveJson(
+      await dependencies.goals.getGoal(
+        resolved.access,
+        requiredParam(context, "goalId")
+      ),
+      200,
+      webOrigin
+    );
+  });
+
+  app.patch(honoPath(apiRoutes.goalUpdate.path), async (context) => {
+    const request = context.req.raw;
+    const resolved = await requireGoalAccess(
+      request,
+      dependencies,
+      webOrigin,
+      "goals",
+      "write"
+    );
+    if (resolved instanceof Response) return resolved;
+    const forbidden = sessionMutationForbidden(resolved, request, webOrigin);
+    if (forbidden) return forbidden;
+
+    return sensitiveJson(
+      await dependencies.goals.updateGoal(
+        resolved.access,
+        requiredParam(context, "goalId"),
+        await request.json()
+      ),
+      200,
+      webOrigin
+    );
+  });
+
+  app.delete(honoPath(apiRoutes.goalDelete.path), async (context) => {
+    const request = context.req.raw;
+    const resolved = await requireGoalAccess(
+      request,
+      dependencies,
+      webOrigin,
+      "goals",
+      "write"
+    );
+    if (resolved instanceof Response) return resolved;
+    const forbidden = sessionMutationForbidden(resolved, request, webOrigin);
+    if (forbidden) return forbidden;
+
+    await dependencies.goals.deleteGoal(
+      resolved.access,
+      requiredParam(context, "goalId")
+    );
+    return sensitiveEmpty(204, webOrigin);
+  });
+
+  app.get(honoPath(apiRoutes.goalLabelGet.path), async (context) => {
+    const request = context.req.raw;
+    const resolved = await requireGoalAccess(
+      request,
+      dependencies,
+      webOrigin,
+      "labels",
+      "read"
+    );
+    if (resolved instanceof Response) return resolved;
+
+    return sensitiveJson(
+      await dependencies.goals.getLabel(
+        resolved.access,
+        requiredParam(context, "labelId")
+      ),
+      200,
+      webOrigin
+    );
+  });
+
+  app.patch(honoPath(apiRoutes.goalLabelUpdate.path), async (context) => {
+    const request = context.req.raw;
+    const resolved = await requireGoalAccess(
+      request,
+      dependencies,
+      webOrigin,
+      "labels",
+      "write"
+    );
+    if (resolved instanceof Response) return resolved;
+    const forbidden = sessionMutationForbidden(resolved, request, webOrigin);
+    if (forbidden) return forbidden;
+
+    return sensitiveJson(
+      await dependencies.goals.updateLabel(
+        resolved.access,
+        requiredParam(context, "labelId"),
+        await request.json()
+      ),
+      200,
+      webOrigin
+    );
+  });
+
+  app.delete(honoPath(apiRoutes.goalLabelDelete.path), async (context) => {
+    const request = context.req.raw;
+    const resolved = await requireGoalAccess(
+      request,
+      dependencies,
+      webOrigin,
+      "labels",
+      "write"
+    );
+    if (resolved instanceof Response) return resolved;
+    const forbidden = sessionMutationForbidden(resolved, request, webOrigin);
+    if (forbidden) return forbidden;
+
+    await dependencies.goals.deleteLabel(
+      resolved.access,
+      requiredParam(context, "labelId")
+    );
+    return sensitiveEmpty(204, webOrigin);
+  });
+
+  // Hono maps HEAD to GET automatically. Keep the explicit method contract used
+  // by apiRoutes instead of silently adding undocumented operations.
+  const fetch = app.fetch;
+  app.fetch = (request, ...options) =>
+    request.method === "HEAD"
+      ? json({ error: "not_found" }, 404, webOrigin)
+      : fetch(request, ...options);
+
+  return app;
+}
+
+export function createApiHandler(dependencies: ApiDependencies) {
+  const app = createApiApp(dependencies);
+  return (request: Request) => Promise.resolve(app.fetch(request));
+}
+
+async function requireSessionMutation(
+  request: Request,
+  dependencies: ApiDependencies,
+  webOrigin: string
+) {
+  if (!hasAllowedOrigin(request, webOrigin)) {
+    return sensitiveJson({ error: "forbidden" }, 403, webOrigin);
+  }
+  const session = await dependencies.auth.getSession(request);
+  return session ?? unauthorizedResponse(dependencies.auth, request, webOrigin);
+}
+
+async function requireGoalAccess(
+  request: Request,
+  dependencies: ApiDependencies,
+  webOrigin: string,
+  scopeNamespace: "goals" | "labels",
+  operation: "read" | "write"
+) {
+  return (
+    (await resolveGoalAccess(
+      request,
+      dependencies,
+      scopeNamespace,
+      operation
+    )) ?? unauthorizedResponse(dependencies.auth, request, webOrigin)
+  );
 }
 
 async function resolveGoalAccess(
@@ -786,43 +808,45 @@ async function resolveGoalAccess(
   };
 }
 
-function goalRouteErrorResponse(error: unknown, webOrigin: string): Response {
-  if (error instanceof GoalError || error instanceof ApiTokenError) {
-    return sensitiveJson(
-      { error: error.code, message: error.message },
-      error.status,
-      webOrigin
-    );
-  }
-  if (error instanceof SyntaxError) {
-    return sensitiveJson(
-      { error: "invalid_json", message: "Request body must be valid JSON" },
-      400,
-      webOrigin
-    );
-  }
-  throw error;
+function sessionMutationForbidden(
+  resolved: { session: boolean },
+  request: Request,
+  webOrigin: string
+) {
+  return resolved.session && !hasAllowedOrigin(request, webOrigin)
+    ? sensitiveJson({ error: "forbidden" }, 403, webOrigin)
+    : null;
 }
 
-function organizationErrorResponse(
-  error: unknown,
-  webOrigin: string
-): Response {
-  if (error instanceof OrganizationError) {
+function apiErrorResponse(
+  error: Error,
+  webOrigin: string,
+  noReferrer = false
+): Response | null {
+  if (
+    error instanceof AuthError ||
+    error instanceof ApiTokenError ||
+    error instanceof GoalError ||
+    error instanceof OrganizationError
+  ) {
     return sensitiveJson(
       { error: error.code, message: error.message },
       error.status,
-      webOrigin
+      webOrigin,
+      undefined,
+      noReferrer
     );
   }
   if (error instanceof SyntaxError) {
     return sensitiveJson(
       { error: "invalid_json", message: "Request body must be valid JSON" },
       400,
-      webOrigin
+      webOrigin,
+      undefined,
+      noReferrer
     );
   }
-  throw error;
+  return null;
 }
 
 function unauthorizedResponse(
@@ -836,50 +860,6 @@ function unauthorizedResponse(
     webOrigin,
     auth.invalidSessionHeaders?.(request)
   );
-}
-
-function apiTokenErrorResponse(error: unknown, webOrigin: string): Response {
-  if (error instanceof ApiTokenError) {
-    return sensitiveJson(
-      { error: error.code, message: error.message },
-      error.status,
-      webOrigin
-    );
-  }
-  if (error instanceof SyntaxError) {
-    return sensitiveJson(
-      { error: "invalid_json", message: "Request body must be valid JSON" },
-      400,
-      webOrigin
-    );
-  }
-  throw error;
-}
-
-function authErrorResponse(
-  error: unknown,
-  webOrigin: string,
-  noReferrer = false
-): Response {
-  if (error instanceof AuthError) {
-    return sensitiveJson(
-      { error: error.code, message: error.message },
-      error.status,
-      webOrigin,
-      undefined,
-      noReferrer
-    );
-  }
-  if (error instanceof SyntaxError) {
-    return sensitiveJson(
-      { error: "invalid_json", message: "Request body must be valid JSON" },
-      400,
-      webOrigin,
-      undefined,
-      noReferrer
-    );
-  }
-  throw error;
 }
 
 export function safeReturnTo(
@@ -903,89 +883,23 @@ export function safeReturnTo(
 }
 
 function hasAllowedOrigin(request: Request, webOrigin: string): boolean {
-  const requestOrigin = request.headers.get("origin");
-  return requestOrigin === webOrigin;
+  return request.headers.get("origin") === webOrigin;
 }
 
-function matches(
-  request: Request,
-  route: { method: string; path: string }
-): boolean {
-  return (
-    request.method === route.method && new URL(request.url).pathname === route.path
-  );
+function honoPath(path: string): string {
+  return path.replace(/\{([^}]+)\}/g, ":$1");
 }
 
-function matchApiTokenRevoke(request: Request): string | null {
-  if (request.method !== apiRoutes.apiTokenRevoke.method) return null;
-  const match = new URL(request.url).pathname.match(/^\/v1\/api-tokens\/([^/]+)$/);
-  if (!match?.[1]) return null;
-  try {
-    return decodeURIComponent(match[1]);
-  } catch {
-    return null;
+function requiredParam(context: Context, name: string): string {
+  const value = context.req.param(name);
+  if (value === undefined) {
+    throw new Error(`Hono did not resolve the ${name} route parameter`);
   }
+  return value;
 }
 
-function matchOrganizationMemberUpdate(request: Request): string | null {
-  if (request.method !== apiRoutes.organizationMemberUpdate.method) return null;
-  const match = new URL(request.url).pathname.match(
-    /^\/v1\/organizations\/current\/members\/([^/]+)$/
-  );
-  if (!match?.[1]) return null;
-  try {
-    return decodeURIComponent(match[1]);
-  } catch {
-    return null;
-  }
-}
-
-function matchOrganizationInvitationRevoke(request: Request): string | null {
-  if (request.method !== apiRoutes.organizationInvitationRevoke.method) return null;
-  const match = new URL(request.url).pathname.match(
-    /^\/v1\/organizations\/current\/invitations\/([^/]+)$/
-  );
-  return match?.[1] ?? null;
-}
-
-function matchOrganizationInvitationResend(request: Request): string | null {
-  if (request.method !== apiRoutes.organizationInvitationResend.method) return null;
-  const match = new URL(request.url).pathname.match(
-    /^\/v1\/organizations\/current\/invitations\/([^/]+)\/resend$/
-  );
-  return match?.[1] ?? null;
-}
-
-function matchResourceRoute(
-  request: Request,
-  prefix: string,
-  methods: readonly string[] = ["GET", "PATCH", "DELETE"]
-): string | null {
-  if (!methods.includes(request.method)) {
-    return null;
-  }
-  const pathname = new URL(request.url).pathname;
-  if (!pathname.startsWith(prefix)) return null;
-  const encoded = pathname.slice(prefix.length);
-  if (!encoded || encoded.includes("/")) return null;
-  try {
-    return decodeURIComponent(encoded);
-  } catch {
-    return null;
-  }
-}
-
-function matchGoalUpdatesRoute(request: Request): string | null {
-  if (request.method !== "GET" && request.method !== "POST") return null;
-  const match = new URL(request.url).pathname.match(
-    /^\/v1\/goals\/([^/]+)\/updates$/
-  );
-  if (!match?.[1]) return null;
-  try {
-    return decodeURIComponent(match[1]);
-  } catch {
-    return null;
-  }
+function defaultErrorReporter(error: Error) {
+  console.error("Unhandled REST API error", error);
 }
 
 function redirect(transition: AuthTransition, webOrigin: string): Response {
@@ -1063,6 +977,9 @@ function responseWithCors(response: Response, webOrigin: string): Response {
     "access-control-allow-headers",
     "authorization, content-type"
   );
-  response.headers.append("vary", "Origin");
+  const vary = response.headers.get("vary");
+  if (!vary?.split(",").some((value) => value.trim() === "Origin")) {
+    response.headers.append("vary", "Origin");
+  }
   return response;
 }

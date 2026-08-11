@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createApiHandler } from "../services/api/src/app";
+import { createApiApp, createApiHandler } from "../services/api/src/app";
 import { createApiTokenService } from "../services/api/src/api-tokens/service";
 import { apiRoutes } from "../services/api/src/routes";
 import { apiOpenApiDocument } from "../services/api/src/spec";
@@ -14,16 +14,19 @@ const webOrigin = "http://localhost:3000";
 const authBackend = new MemoryEmailAuthBackend(webOrigin);
 const organizationRepository = new MemoryOrganizationRepository();
 const goalRepository = new MemoryGoalRepository();
-const organizations = createOrganizationService(organizationRepository);
+const organizations = createOrganizationService(organizationRepository, {
+  webOrigin
+});
 const apiTokens = createApiTokenService(new MemoryApiTokenRepository());
+const goals = createGoalService(goalRepository, {
+  isOrganizationMember: async (userId, organizationId) =>
+    (await organizations.roleForUser(userId, organizationId)) !== null
+});
 const handleApiRequest = createApiHandler({
   webOrigin,
   apiTokens,
   organizations,
-  goals: createGoalService(goalRepository, {
-    isOrganizationMember: async (userId, organizationId) =>
-      (await organizations.roleForUser(userId, organizationId)) !== null
-  }),
+  goals,
   auth: authBackend
 });
 
@@ -47,6 +50,14 @@ describe("REST API contract", () => {
     expect(await response.json()).toEqual({ error: "not_found" });
   });
 
+  test("does not synthesize undocumented HEAD routes", async () => {
+    const response = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.health.path}`, { method: "HEAD" })
+    );
+
+    expect(response.status).toBe(404);
+  });
+
   test("handles credentialed CORS preflight", async () => {
     const response = await handleApiRequest(
       new Request("http://localhost/health", { method: "OPTIONS" })
@@ -58,6 +69,74 @@ describe("REST API contract", () => {
     expect(response.headers.get("access-control-allow-methods")).toBe(
       "GET, POST, PATCH, DELETE, OPTIONS"
     );
+  });
+
+  test("registers every API contract route with Hono", () => {
+    const app = createApiApp({
+      webOrigin,
+      apiTokens,
+      organizations,
+      goals,
+      auth: authBackend
+    });
+    const registered = new Set(
+      app.routes.map(
+        ({ method, path }) =>
+          `${method} ${path.replace(/:([^/]+)/g, "{$1}")}`
+      )
+    );
+
+    for (const route of Object.values(apiRoutes)) {
+      expect(registered.has(`${route.method} ${route.path}`)).toBe(true);
+    }
+  });
+
+  test("contains and reports unexpected async failures", async () => {
+    const email = `${crypto.randomUUID()}@example.com`;
+    authBackend.addVerifiedUser({
+      email,
+      password: "correct horse battery staple",
+      displayName: "Async Failure User"
+    });
+    const login = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.authEmailLogin.path}`, {
+        method: "POST",
+        headers: { origin: webOrigin, "content-type": "application/json" },
+        body: JSON.stringify({ email, password: "correct horse battery staple" })
+      })
+    );
+    const failure = new Error("private dependency failure");
+    const reported: Error[] = [];
+    const failingOrganizations = new Proxy(organizations, {
+      get(target, property, receiver) {
+        if (property === "ensureForUser") {
+          return async () => {
+            throw failure;
+          };
+        }
+        return Reflect.get(target, property, receiver);
+      }
+    });
+    const handler = createApiHandler({
+      webOrigin,
+      apiTokens,
+      organizations: failingOrganizations,
+      goals,
+      auth: authBackend,
+      reportError: (error) => reported.push(error)
+    });
+
+    const response = await handler(
+      new Request(`http://localhost${apiRoutes.authSession.path}`, {
+        headers: { cookie: login.headers.get("set-cookie") ?? "" }
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "internal_error" });
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("access-control-allow-origin")).toBe(webOrigin);
+    expect(reported).toEqual([failure]);
   });
 });
 
@@ -764,6 +843,119 @@ describe("organization contract", () => {
     expect(ownerRoleChange.status).toBe(403);
   });
 
+  test("creates, lists, resends, revokes, and accepts invitations", async () => {
+    const owner = await authenticatedUser("Invitation Owner");
+    const invitee = await authenticatedUser("Invitation Recipient");
+    const createResponse = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationInvitationsCreate.path}`, {
+        method: "POST",
+        headers: {
+          cookie: owner.cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ email: invitee.user.email, role: "member" })
+      })
+    );
+    expect(createResponse.status).toBe(201);
+    const issued = (await createResponse.json()) as {
+      invitation: { id: string; email: string };
+      acceptUrl: string;
+      emailSent: boolean;
+    };
+    expect(issued).toMatchObject({
+      invitation: { email: invitee.user.email },
+      emailSent: false
+    });
+    expect(issued.acceptUrl).toStartWith(`${webOrigin}/invitations/`);
+
+    const listResponse = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationInvitationsList.path}`, {
+        headers: { cookie: owner.cookie }
+      })
+    );
+    expect(listResponse.status).toBe(200);
+    expect(await listResponse.json()).toMatchObject({
+      invitations: [{ id: issued.invitation.id, email: invitee.user.email }]
+    });
+
+    const resendPath = apiRoutes.organizationInvitationResend.path.replace(
+      "{invitationId}",
+      issued.invitation.id
+    );
+    const resendResponse = await handleApiRequest(
+      new Request(`http://localhost${resendPath}`, {
+        method: "POST",
+        headers: { cookie: owner.cookie, origin: webOrigin }
+      })
+    );
+    expect(resendResponse.status).toBe(200);
+    const reissued = (await resendResponse.json()) as { acceptUrl: string };
+    expect(reissued.acceptUrl).not.toBe(issued.acceptUrl);
+
+    const acceptResponse = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationInvitationAccept.path}`, {
+        method: "POST",
+        headers: {
+          cookie: invitee.cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ token: reissued.acceptUrl.split("/").at(-1) })
+      })
+    );
+    expect(acceptResponse.status).toBe(200);
+    expect(await acceptResponse.json()).toMatchObject({
+      organizationId:
+        organizationRepository.activeOrganizations.get(invitee.user.id),
+      role: "member"
+    });
+
+    const revokedInvitee = await authenticatedUser("Revoked Recipient");
+    const revokeCandidate = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationInvitationsCreate.path}`, {
+        method: "POST",
+        headers: {
+          cookie: owner.cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          email: revokedInvitee.user.email,
+          role: "admin"
+        })
+      })
+    );
+    const revocable = (await revokeCandidate.json()) as {
+      invitation: { id: string };
+      acceptUrl: string;
+    };
+    const revokePath = apiRoutes.organizationInvitationRevoke.path.replace(
+      "{invitationId}",
+      revocable.invitation.id
+    );
+    const revokeResponse = await handleApiRequest(
+      new Request(`http://localhost${revokePath}`, {
+        method: "DELETE",
+        headers: { cookie: owner.cookie, origin: webOrigin }
+      })
+    );
+    expect(revokeResponse.status).toBe(204);
+
+    const revokedAcceptResponse = await handleApiRequest(
+      new Request(`http://localhost${apiRoutes.organizationInvitationAccept.path}`, {
+        method: "POST",
+        headers: {
+          cookie: revokedInvitee.cookie,
+          origin: webOrigin,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ token: revocable.acceptUrl.split("/").at(-1) })
+      })
+    );
+    expect(revokedAcceptResponse.status).toBe(404);
+  });
+
   test("documents every organization route", () => {
     expect(
       apiOpenApiDocument.paths[apiRoutes.organizationsList.path].get
@@ -782,6 +974,21 @@ describe("organization contract", () => {
     ).toBeDefined();
     expect(
       apiOpenApiDocument.paths[apiRoutes.organizationMemberUpdate.path].patch
+    ).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.organizationInvitationsList.path].get
+    ).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.organizationInvitationsCreate.path].post
+    ).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.organizationInvitationRevoke.path].delete
+    ).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.organizationInvitationResend.path].post
+    ).toBeDefined();
+    expect(
+      apiOpenApiDocument.paths[apiRoutes.organizationInvitationAccept.path].post
     ).toBeDefined();
   });
 });
