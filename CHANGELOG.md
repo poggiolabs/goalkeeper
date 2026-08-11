@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/poggiolabs/goalkeeper/compare/v0.4.0...v0.5.0) (2026-08-11)
+
+
+### Features
+
+* **api:** migrate REST service to Hono ([#22](https://github.com/poggiolabs/goalkeeper/issues/22)) ([25f6b68](https://github.com/poggiolabs/goalkeeper/commit/25f6b68b329dc88158eaae5e69e861fa93a02d76))
+
+
+### Bug Fixes
+
+* **api:** Correct stale email delivery strings ([#23](https://github.com/poggiolabs/goalkeeper/issues/23)) ([522fcd5](https://github.com/poggiolabs/goalkeeper/commit/522fcd55e755005047b21bb0e74339a315d72205))
+
 ## [0.4.0](https://github.com/poggiolabs/goalkeeper/compare/v0.3.0...v0.4.0) (2026-08-10)
 
 
