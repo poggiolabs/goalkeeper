@@ -16,7 +16,7 @@ export interface EmailDelivery {
 
 export class LogEmailDelivery implements EmailDelivery {
   async send(message: EmailMessage): Promise<void> {
-    console.log("Development authentication email", message);
+    console.log("Email not sent (logging only)", message);
   }
 }
 
@@ -67,7 +67,8 @@ function smtpClientOptions(
 
 function invalidSmtpUrl() {
   return new Error(
-    "AUTH_SMTP_URL must be a valid smtp:// or smtps:// URL"
+    "SMTP_URL must be a valid smtp:// or smtps:// URL. A password containing " +
+      "'%' must be percent-encoded, since the userinfo is URL-decoded."
   );
 }
 
