@@ -28,15 +28,6 @@ These results motivate a narrow bet: keep the outcome, success criteria,
 verified progress, and evidence in one durable place, then let agents come and
 go around it.
 
-### Shared blackboards improve multi-agent task success
-
-The pattern goes back to the
-[Hearsay-II blackboard system](https://doi.org/10.1609/aimag.v7i3.550): each
-participant reads the current state and adds what it knows. In a 2025 study,
-[Google researchers found](https://research.google/pubs/blackboard-multi-agent-systems-for-information-discovery-in-data-science/)
-that LLM teams using a blackboard improved end-to-end task success by 13–57%
-over RAG and master–worker baselines.
-
 ### Complete instructions outperform intent revealed over multiple turns
 
 In
@@ -57,14 +48,6 @@ repository comments and patches pulled GPT-5 mini away from explicit
 `AGENTS.md` constraints. Together, these results motivate re-grounding each
 agent against the goal instead of treating prior activity as the objective.
 
-### Verified progress tracking improves long-horizon completion
-
-In the 2026 [PushBench preprint](https://arxiv.org/abs/2605.23574), agents made
-plausible local progress but repeated work, stopped early, or lost track of the
-target. A controller that tracked verified state reached 69–78% success and
-eliminated duplicate submissions; standard and completion-gated controllers
-completed no tasks in some matched settings.
-
 ### Rubric-based rewards improve evaluation-driven learning
 
 [Rubrics as Rewards](https://arxiv.org/abs/2507.17746) used itemized,
@@ -73,6 +56,23 @@ HealthBench performance by up to 31% and GPQA-Diamond by 7%, relative to methods
 trained with a single Likert-style score. The experiment was about training, but
 the design lesson is useful: define “done” as inspectable criteria, not a vague
 rating.
+
+### Verified progress tracking improves long-horizon completion
+
+In the 2026 [PushBench preprint](https://arxiv.org/abs/2605.23574), agents made
+plausible local progress but repeated work, stopped early, or lost track of the
+target. A controller that tracked verified state reached 69–78% success and
+eliminated duplicate submissions; standard and completion-gated controllers
+completed no tasks in some matched settings.
+
+### Shared blackboards improve multi-agent task success
+
+The pattern goes back to the
+[Hearsay-II blackboard system](https://doi.org/10.1609/aimag.v7i3.550): each
+participant reads the current state and adds what it knows. In a 2025 study,
+[Google researchers found](https://research.google/pubs/blackboard-multi-agent-systems-for-information-discovery-in-data-science/)
+that LLM teams using a blackboard improved end-to-end task success by 13–57%
+over RAG and master–worker baselines.
 
 ### One objective can organize a large, open-ended search
 
