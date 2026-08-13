@@ -9,6 +9,8 @@ import {
 } from "react";
 import {
   getAuthSession,
+  redirectStaleSession,
+  StaleSessionError,
   subscribeToAuthUnauthorized,
   UnauthorizedError,
   type AuthSession
@@ -40,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (reason) {
       if (signal?.aborted) return null;
       setSession(null);
+      if (redirectStaleSession(reason)) return null;
       if (reason instanceof UnauthorizedError) {
         setStatus("unauthenticated");
         return null;
@@ -86,6 +89,7 @@ async function getSessionWithRetry(signal?: AbortSignal): Promise<AuthSession> {
     } catch (error) {
       if (
         signal?.aborted ||
+        error instanceof StaleSessionError ||
         error instanceof UnauthorizedError ||
         attempt === retryDelays.length
       ) {

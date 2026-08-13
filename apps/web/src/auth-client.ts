@@ -83,6 +83,22 @@ export type ApiToken = {
 
 export class UnauthorizedError extends Error {}
 
+export class StaleSessionError extends Error {
+  constructor(readonly logoutUrl: string) {
+    super("Your session has expired.");
+    this.name = "StaleSessionError";
+  }
+}
+
+export function redirectStaleSession(
+  reason: unknown,
+  replace: (url: string) => void = (url) => window.location.replace(url)
+): boolean {
+  if (!(reason instanceof StaleSessionError)) return false;
+  replace(reason.logoutUrl);
+  return true;
+}
+
 const unauthorizedListeners = new Set<() => void>();
 
 export function subscribeToAuthUnauthorized(listener: () => void): () => void {
@@ -174,6 +190,8 @@ export async function getAuthSession(
   });
 
   if (response.status === 401) {
+    const logoutUrl = await staleSessionLogoutUrl(response, apiUrl);
+    if (logoutUrl) throw new StaleSessionError(logoutUrl);
     throw unauthorizedError();
   }
 
@@ -182,6 +200,35 @@ export async function getAuthSession(
   }
 
   return response.json() as Promise<AuthSession>;
+}
+
+async function staleSessionLogoutUrl(
+  response: Response,
+  apiUrl: string
+): Promise<string | null> {
+  try {
+    const body = (await response.json()) as {
+      error?: unknown;
+      logoutUrl?: unknown;
+    };
+    if (body.error !== "stale_session" || typeof body.logoutUrl !== "string") {
+      return null;
+    }
+
+    const expectedOrigin = new URL(apiUrl).origin;
+    const logoutUrl = new URL(body.logoutUrl, expectedOrigin);
+    if (
+      logoutUrl.origin !== expectedOrigin ||
+      logoutUrl.pathname !== "/_auth/logout" ||
+      logoutUrl.search ||
+      logoutUrl.hash
+    ) {
+      return null;
+    }
+    return logoutUrl.toString();
+  } catch {
+    return null;
+  }
 }
 
 export async function logout(apiUrl: string): Promise<string> {

@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   createOrganization,
+  getAuthSession,
   getAuthConfiguration,
   listApiTokens,
   listOrganizationMembers,
   loginWithEmail,
+  redirectStaleSession,
+  StaleSessionError,
   switchOrganization,
   subscribeToAuthUnauthorized,
+  UnauthorizedError,
   updateOrganizationMemberRole,
   updateOrganizationName
 } from "../apps/web/src/auth-client";
@@ -46,6 +50,44 @@ describe("web authentication client", () => {
         returnTo: "http://localhost:3000/account"
       })
     ).rejects.toThrow("Invalid email or password");
+  });
+
+  test("recognizes a same-origin stale-session logout response", async () => {
+    globalThis.fetch = async () =>
+      Response.json(
+        {
+          error: "stale_session",
+          logoutUrl: "http://localhost:3001/_auth/logout"
+        },
+        { status: 401 }
+      );
+
+    let error: unknown;
+    try {
+      await getAuthSession("http://localhost:3001");
+    } catch (reason) {
+      error = reason;
+    }
+
+    expect(error).toBeInstanceOf(StaleSessionError);
+    let redirectedTo: string | undefined;
+    expect(redirectStaleSession(error, (url) => (redirectedTo = url))).toBeTrue();
+    expect(redirectedTo).toBe("http://localhost:3001/_auth/logout");
+  });
+
+  test("rejects an off-origin stale-session logout target", async () => {
+    globalThis.fetch = async () =>
+      Response.json(
+        {
+          error: "stale_session",
+          logoutUrl: "https://attacker.example/_auth/logout"
+        },
+        { status: 401 }
+      );
+
+    await expect(
+      getAuthSession("http://localhost:3001")
+    ).rejects.toBeInstanceOf(UnauthorizedError);
   });
 
   test("notifies shared auth state when an authenticated request returns 401", async () => {
