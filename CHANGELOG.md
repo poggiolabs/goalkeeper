@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/poggiolabs/goalkeeper/compare/v0.5.0...v0.5.1) (2026-08-13)
+
+
+### Bug Fixes
+
+* **docs:** resolve broken paper link ([#26](https://github.com/poggiolabs/goalkeeper/issues/26)) ([251b410](https://github.com/poggiolabs/goalkeeper/commit/251b4107e42d68fbc315e85063fbbf154f393fec))
+
 ## [0.5.0](https://github.com/poggiolabs/goalkeeper/compare/v0.4.0...v0.5.0) (2026-08-11)
 
 
