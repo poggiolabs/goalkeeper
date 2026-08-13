@@ -24,47 +24,64 @@ the same record, even when the work moves between sessions, runtimes, or agents.
 
 ## Why goals?
 
-Several lines of research point in the same direction:
-
-- **A shared blackboard lets specialists coordinate without talking to every
-  other specialist.** The pattern goes back to the
-  [Hearsay-II blackboard system](https://doi.org/10.1609/aimag.v7i3.550): each
-  participant reads the current state and adds what it knows. In a 2025 study,
-  [Google researchers found](https://research.google/pubs/blackboard-multi-agent-systems-for-information-discovery-in-data-science/)
-  that LLM teams using a blackboard improved end-to-end task success by 13–57%
-  over RAG and master–worker baselines.
-
-- **Long jobs fail at persistence, not just capability.** In the 2026
-  [PushBench preprint](https://arxiv.org/abs/2605.23574), agents made plausible
-  local progress but repeated work, stopped early, or lost track of the target.
-  A controller that tracked verified state reached 69–78% success and eliminated
-  duplicate submissions; standard and completion-gated controllers completed
-  no tasks in some matched settings.
-
-- **Separate records for the task and its progress make recovery explicit.**
-  Microsoft's
-  [Magentic-One](https://www.microsoft.com/en-us/research/publication/magentic-one-a-generalist-multi-agent-system-for-solving-complex-tasks/)
-  keeps a task ledger for facts and plans and a progress ledger for status and
-  assignments. Its orchestrator checks for stalls and replans, and the system
-  performed competitively on three agent benchmarks.
-
-- **Useful work compounds when it survives the run.**
-  [Voyager](https://voyager.minedojo.org/) stored successful behaviors in a
-  reusable skill library. It collected 3.3× more unique items and reached key
-  milestones up to 15.3× faster than prior systems, then reused those skills in
-  a new world. The durable artifact was more valuable than any one session.
-
-- **A stable objective can keep a very large search pointed in one direction.**
-  In Anthropic's 2026
-  [Riemann zeta experiment](https://www.anthropic.com/research/riemann-zeta),
-  roughly 60 subagents explored, checked, reviewed, and formalized work over 31
-  million output tokens. Human input was mostly encouragement to keep going.
-  The system did not solve the Riemann hypothesis, but it improved a related
-  lower bound from 41.6% to 67.2%.
-
 These results motivate a narrow bet: keep the outcome, success criteria,
 verified progress, and evidence in one durable place, then let agents come and
 go around it.
+
+### Shared blackboards improve multi-agent task success
+
+The pattern goes back to the
+[Hearsay-II blackboard system](https://doi.org/10.1609/aimag.v7i3.550): each
+participant reads the current state and adds what it knows. In a 2025 study,
+[Google researchers found](https://research.google/pubs/blackboard-multi-agent-systems-for-information-discovery-in-data-science/)
+that LLM teams using a blackboard improved end-to-end task success by 13–57%
+over RAG and master–worker baselines.
+
+### Complete instructions outperform intent revealed over multiple turns
+
+In
+[LLMs Get Lost in Multi-Turn Conversation](https://www.microsoft.com/en-us/research/publication/llms-get-lost-in-multi-turn-conversation/),
+performance was 39% lower on average when the same task unfolded over several
+turns instead of one complete instruction. Across more than 200,000 simulated
+conversations, models committed to early assumptions and often failed to
+recover. A canonical goal gives every run a clean statement of intent.
+
+### Strong goal statements reduce drift under adversarial pressure
+
+A [long-horizon study](https://arxiv.org/abs/2505.02709) found that competing
+pressure caused goal drift. In that setting, stronger goal wording reduced it.
+A [follow-up study](https://arxiv.org/abs/2603.03258) found that newer agents
+could inherit drift from weaker agents' trajectories. In a smaller
+[coding-agent study](https://library.sparai.org/reports/evaluating-goal-drift-in-coding-agents-tyautp/),
+repository comments and patches pulled GPT-5 mini away from explicit
+`AGENTS.md` constraints. Together, these results motivate re-grounding each
+agent against the goal instead of treating prior activity as the objective.
+
+### Verified progress tracking improves long-horizon completion
+
+In the 2026 [PushBench preprint](https://arxiv.org/abs/2605.23574), agents made
+plausible local progress but repeated work, stopped early, or lost track of the
+target. A controller that tracked verified state reached 69–78% success and
+eliminated duplicate submissions; standard and completion-gated controllers
+completed no tasks in some matched settings.
+
+### Rubric-based rewards improve evaluation-driven learning
+
+[Rubrics as Rewards](https://arxiv.org/abs/2507.17746) used itemized,
+instance-specific rubrics as training signals. Its best method improved
+HealthBench performance by up to 31% and GPQA-Diamond by 7%, relative to methods
+trained with a single Likert-style score. The experiment was about training, but
+the design lesson is useful: define “done” as inspectable criteria, not a vague
+rating.
+
+### One objective can organize a large, open-ended search
+
+In Anthropic's 2026
+[Riemann zeta experiment](https://www.anthropic.com/research/riemann-zeta),
+roughly 60 subagents explored, checked, reviewed, and formalized work over 31
+million output tokens. Human input was mostly encouragement to keep going. The
+system did not solve the Riemann hypothesis, but it improved a related lower
+bound from 41.6% to 67.2%.
 
 <Cards>
   <Card title="Get started" href="/docs/getting-started">
